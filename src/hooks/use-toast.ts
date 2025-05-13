@@ -136,7 +136,8 @@ let memoryState: State = { toasts: [] }
 function dispatch(action: Action) {
   memoryState = reducer(memoryState, action)
   listeners.forEach((listener) => {
-    listener(memoryState)
+    // Call listeners asynchronously to prevent "Cannot update a component while rendering another" errors.
+    Promise.resolve().then(() => listener(memoryState));
   })
 }
 
@@ -182,7 +183,7 @@ function useToast() {
         listeners.splice(index, 1)
       }
     }
-  }, [state])
+  }, []) // Changed dependency array from [state] to [] as setState is stable.
 
   return {
     ...state,
