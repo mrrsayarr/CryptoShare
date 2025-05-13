@@ -1,7 +1,7 @@
 
 "use client";
 import Link from 'next/link';
-import { LockKeyhole, MessageSquareText, ShieldCheck, Moon, Sun } from 'lucide-react';
+import { LockKeyhole, MessageSquareText, ShieldCheck, Moon, Sun, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTheme } from "next-themes";
 import {
@@ -22,17 +22,23 @@ export function Navbar() {
             <LockKeyhole className="h-7 w-7" />
             <span>Cryptoshare</span>
           </Link>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-4">
             <Link href="/" passHref>
-              <Button variant="ghost" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground">
-                <MessageSquareText className="mr-2 h-5 w-5" />
-                Share
+              <Button variant="ghost" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground px-2 sm:px-3">
+                <MessageSquareText className="mr-0 sm:mr-2 h-5 w-5" />
+                <span className="hidden sm:inline">Share</span>
               </Button>
             </Link>
             <Link href="/password-strength" passHref>
-              <Button variant="ghost" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground">
-                <ShieldCheck className="mr-2 h-5 w-5" />
-                Password Tool
+              <Button variant="ghost" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground px-2 sm:px-3">
+                <ShieldCheck className="mr-0 sm:mr-2 h-5 w-5" />
+                <span className="hidden sm:inline">Password Tool</span>
+              </Button>
+            </Link>
+            <Link href="/about" passHref>
+              <Button variant="ghost" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground px-2 sm:px-3">
+                <Info className="mr-0 sm:mr-2 h-5 w-5" />
+                <span className="hidden sm:inline">About</span>
               </Button>
             </Link>
             <DropdownMenu>
