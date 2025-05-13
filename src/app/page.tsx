@@ -16,11 +16,14 @@ import type {
   FileMetadata, 
   FileChunk
 } from '@/types/cryptoshare';
-import type { TransferActivityFile } from '@/types/cryptoshare'; // Ensure this is correctly imported
+import type { TransferActivityFile } from '@/types/cryptoshare';
 import { useToast } from "@/hooks/use-toast";
 
 export default function CryptosharePage() {
+  // This state directly reflects the state from useWebRTC hook
   const [currentWebRTCState, setCurrentWebRTCState] = useState<PeerConnectionState>('disconnected');
+  
+  // States for displaying SDP/ICE, directly fed by useWebRTC callbacks
   const [localSdpOfferForDisplay, setLocalSdpOfferForDisplay] = useState<string | null>(null);
   const [localSdpAnswerForDisplay, setLocalSdpAnswerForDisplay] = useState<string | null>(null);
   const [localIceCandidatesForDisplay, setLocalIceCandidatesForDisplay] = useState<RTCIceCandidateInit[]>([]);
@@ -35,39 +38,46 @@ export default function CryptosharePage() {
 
 
   const handleConnectionStateChange = useCallback((newState: PeerConnectionState, details?: string) => {
-    setCurrentWebRTCState(prevState => {
-      console.log(`CryptosharePage: WebRTC state changing from ${prevState} to ${newState}. Details: ${details || 'N/A'}`);
-      if (newState === 'failed' && prevState !== 'failed') { // Avoid redundant failed toasts
-          toast({ title: "Connection Failed", description: details || "Could not establish P2P connection.", variant: "destructive"});
-      }
-      // Only show "Disconnected" toast if it's a transition from 'connected' or an unexpected disconnect not already covered by 'failed'
-      if (newState === 'disconnected' && prevState === 'connected') { 
-          toast({ title: "Disconnected", description: details || "P2P connection closed."});
-      }
-      
-      // Reset SDP and ICE display states when disconnected, unless it's a failed state (failed handles its own UI)
-      if (newState === 'disconnected' && prevState !== 'failed') {
-          setLocalSdpOfferForDisplay(null);
-          setLocalSdpAnswerForDisplay(null);
-          setLocalIceCandidatesForDisplay([]);
-      }
-      return newState;
-    });
+    console.log(`CryptosharePage: Received connection state change: ${newState}, Details: ${details}`);
+    setCurrentWebRTCState(newState);
+
+    if (newState === 'failed') {
+        toast({ title: "Connection Failed", description: details || "Could not establish P2P connection.", variant: "destructive"});
+    }
+    if (newState === 'disconnected' && appWebRTCStateRef.current === 'connected') { // Check previous app state
+        toast({ title: "Disconnected", description: details || "P2P connection closed."});
+    }
+    
+    if (newState === 'disconnected' || newState === 'failed') {
+        // Reset SDP/ICE display only when truly disconnected or failed, allowing them to persist during 'connecting' etc.
+        setLocalSdpOfferForDisplay(null);
+        setLocalSdpAnswerForDisplay(null);
+        setLocalIceCandidatesForDisplay([]);
+        // Reset app-specific data
+        setChatMessages([]);
+        setDataSnippets([]);
+        setFileActivities([]);
+        receivedFileChunks.current = {};
+    }
   }, [toast]);
+  const appWebRTCStateRef = useRef(currentWebRTCState); // To track previous state for toast logic
+  useEffect(() => {
+    appWebRTCStateRef.current = currentWebRTCState;
+  }, [currentWebRTCState]);
+
 
   const handleRemotePeerDisconnected = useCallback(() => {
-    // This might be redundant if onConnectionStateChange already handles failed/disconnected toasts
+    // This toast might be redundant if handleConnectionStateChange for 'disconnected' or 'failed' already covers it.
     // toast({ title: "Peer Disconnected", description: "The other peer has disconnected.", variant: "destructive" });
-    console.log("CryptosharePage: Peer disconnected callback triggered.");
-    // webRTC.disconnect() will be called internally by useWebRTC hook, updating state via handleConnectionStateChange
-  }, [/*toast*/]);
+    console.log("CryptosharePage: Peer disconnected callback triggered (from useWebRTC). State will update via onConnectionStateChange.");
+  }, []);
 
   const handleMessageReceived = useCallback((message: { text: string; sender: 'peer'; timestamp: Date }) => {
-    setChatMessages(prev => [...prev, { ...message, id: `msg-${Date.now()}` }]);
+    setChatMessages(prev => [...prev, { ...message, id: `msg-${Date.now()}-${Math.random()}` }]);
   }, []);
 
   const handleDataSnippetReceived = useCallback((snippet: { content: string; type: 'received'; timestamp: Date }) => {
-    setDataSnippets(prev => [{ ...snippet, id: `data-${Date.now()}` }, ...prev].slice(0, 10));
+    setDataSnippets(prev => [{ ...snippet, id: `data-${Date.now()}-${Math.random()}` }, ...prev].slice(0, 10));
     toast({ title: "Data Received", description: "A data snippet was received." });
   }, [toast]);
 
@@ -84,12 +94,12 @@ export default function CryptosharePage() {
     toast({ title: "Incoming File", description: `Request to receive file: ${metadata.name}` });
   }, [toast]);
 
-  const handleFileApproved = useCallback((fileId: string) => {
+  const handleFileApprovedByPeer = useCallback((fileId: string) => { // Renamed for clarity
     setFileActivities(prev => prev.map(f => f.id === fileId && f.type === 'outgoing' ? { ...f, status: 'transferring' } : f));
      toast({ title: "File Approved", description: "Peer approved your file transfer." });
   }, [toast]);
 
-  const handleFileRejected = useCallback((fileId: string) => {
+  const handleFileRejectedByPeer = useCallback((fileId: string) => { // Renamed for clarity
     setFileActivities(prev => prev.map(f => f.id === fileId && f.type === 'outgoing' ? { ...f, status: 'rejected' } : f));
     toast({ title: "File Rejected", description: "Peer rejected your file transfer.", variant: "destructive" });
   }, [toast]);
@@ -97,35 +107,36 @@ export default function CryptosharePage() {
   const handleFileChunkReceived = useCallback((chunk: FileChunk) => {
     setFileActivities(prevActivities => {
       return prevActivities.map(activity => {
-        if (activity.id === chunk.fileId && activity.type === 'incoming') {
+        if (activity.id === chunk.fileId && activity.type === 'incoming' && activity.status !== 'transferred') {
           if (!receivedFileChunks.current[chunk.fileId]) {
             receivedFileChunks.current[chunk.fileId] = [];
           }
           let bufferData: ArrayBuffer;
-          if (typeof chunk.data === 'string') {
+          if (typeof chunk.data === 'string') { // Assuming base64 encoded string
              try {
                 const binaryString = window.atob(chunk.data);
                 const len = binaryString.length;
                 const bytes = new Uint8Array(len);
-                for (let i = 0; i < len; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
-                }
+                for (let i = 0; i < len; i++) { bytes[i] = binaryString.charCodeAt(i); }
                 bufferData = bytes.buffer;
              } catch (e) {
                 console.error("Error decoding base64 chunk data:", e);
-                const encoder = new TextEncoder();
-                bufferData = encoder.encode(chunk.data).buffer;
+                toast({ title: "File Transfer Error", description: `Error decoding chunk for ${activity.name}.`, variant: "destructive" });
+                return { ...activity, status: 'error' };
              }
-          } else {
+          } else { // Already ArrayBuffer
             bufferData = chunk.data; 
           }
 
           receivedFileChunks.current[chunk.fileId][chunk.chunkNumber] = bufferData;
-
           const newProgress = Math.round(((chunk.chunkNumber + 1) / chunk.totalChunks) * 100);
+
           if (chunk.isLast) {
-            const fileBlobs = receivedFileChunks.current[chunk.fileId].map(buffer => new Blob([buffer]));
-            const fullFileBlob = new Blob(fileBlobs, {type: activity.name.endsWith('.txt') ? 'text/plain' : undefined}); // Basic MIME type inference
+            const fileBlobs = receivedFileChunks.current[chunk.fileId]
+                .filter(buffer => buffer) // Ensure no undefined/null buffers if chunks were missed (should not happen with WebRTC reliability)
+                .map(buffer => new Blob([buffer]));
+
+            const fullFileBlob = new Blob(fileBlobs, {type: activity.name.endsWith('.txt') ? 'text/plain' : undefined}); 
             
             const url = URL.createObjectURL(fullFileBlob);
             const a = document.createElement('a');
@@ -149,16 +160,17 @@ export default function CryptosharePage() {
 
   const handleLocalSdpReady = useCallback((type: 'offer' | 'answer', sdp: string) => {
     if (type === 'offer') {
-      console.log("CryptosharePage: Local Offer SDP Ready");
+      console.log("CryptosharePage: Local Offer SDP Ready for display.");
       setLocalSdpOfferForDisplay(sdp);
+      setLocalSdpAnswerForDisplay(null); // Clear any old answer
     } else {
-      console.log("CryptosharePage: Local Answer SDP Ready");
+      console.log("CryptosharePage: Local Answer SDP Ready for display.");
       setLocalSdpAnswerForDisplay(sdp);
     }
   }, []);
 
   const handleLocalIceCandidateReady = useCallback((candidate: RTCIceCandidateInit) => {
-    console.log("CryptosharePage: Local ICE Candidate Ready");
+    console.log("CryptosharePage: Local ICE Candidate Ready for display.");
     setLocalIceCandidatesForDisplay(prev => [...prev, candidate]);
   }, []);
 
@@ -168,19 +180,17 @@ export default function CryptosharePage() {
     onMessageReceived: handleMessageReceived,
     onDataSnippetReceived: handleDataSnippetReceived,
     onFileMetadataReceived: handleFileMetadataReceived,
-    onFileApproved: handleFileApproved,
-    onFileRejected: handleFileRejected,
+    onFileApproved: handleFileApprovedByPeer, // Renamed
+    onFileRejected: handleFileRejectedByPeer, // Renamed
     onFileChunkReceived: handleFileChunkReceived,
     onLocalSdpReady: handleLocalSdpReady,
     onLocalIceCandidateReady: handleLocalIceCandidateReady,
   });
 
-  const { connectionState: rtcStateFromHook, disconnect: rtcDisconnect } = webRTC;
-
   useEffect(() => {
     setMounted(true);
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (rtcStateFromHook === 'connected' || rtcStateFromHook === 'connecting') {
+      if (webRTC.connectionState === 'connected' || webRTC.connectionState === 'connecting') {
         event.preventDefault(); 
         event.returnValue = ''; 
       }
@@ -188,15 +198,16 @@ export default function CryptosharePage() {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      if (rtcStateFromHook === 'connected' || rtcStateFromHook === 'connecting') {
-        console.log("CryptosharePage: Unloading, disconnecting WebRTC.");
-        rtcDisconnect();
+      if (webRTC.connectionState === 'connected' || webRTC.connectionState === 'connecting') {
+        console.log("CryptosharePage: Unmounting, disconnecting WebRTC.");
+        webRTC.disconnect();
       }
     };
-  }, [rtcStateFromHook, rtcDisconnect]);
+  }, [webRTC]); // webRTC object itself is stable due to how useWebRTC is structured.
 
+  // Actions called by ConnectionManager
   const handleStartInitiator = useCallback(() => {
-    console.log("CryptosharePage: Starting Initiator Session.");
+    console.log("CryptosharePage: User wants to start Initiator Session.");
     setLocalSdpOfferForDisplay(null); 
     setLocalSdpAnswerForDisplay(null);
     setLocalIceCandidatesForDisplay([]);
@@ -205,7 +216,7 @@ export default function CryptosharePage() {
   }, [webRTC]);
 
   const handleProcessOfferAndCreateAnswer = useCallback((offerSdp: string) => {
-    console.log("CryptosharePage: Processing Offer and Creating Answer.");
+    console.log("CryptosharePage: User wants to process Offer and Create Answer.");
     setLocalSdpOfferForDisplay(null); 
     setLocalSdpAnswerForDisplay(null);
     setLocalIceCandidatesForDisplay([]);
@@ -214,14 +225,14 @@ export default function CryptosharePage() {
   }, [webRTC]);
   
   const handleAcceptAnswer = useCallback((answerSdp: string) => {
-    console.log("CryptosharePage: Accepting Answer.");
+    console.log("CryptosharePage: User wants to accept Answer.");
     webRTC.acceptAnswer(answerSdp);
   }, [webRTC]);
 
   const handleAddRemoteIceCandidate = useCallback((candidateJson: string) => {
      try {
-        console.log("CryptosharePage: Adding Remote ICE Candidate.");
-        const candidate = JSON.parse(candidateJson) as RTCIceCandidateInit; // Basic validation
+        console.log("CryptosharePage: User wants to add Remote ICE Candidate.");
+        const candidate = JSON.parse(candidateJson) as RTCIceCandidateInit;
         webRTC.addRemoteIceCandidate(candidate);
      } catch (e) {
         toast({ title: "Invalid ICE Candidate", description: "The provided ICE candidate was not valid JSON.", variant: "destructive"});
@@ -230,26 +241,20 @@ export default function CryptosharePage() {
   }, [webRTC, toast]);
 
   const handleDisconnect = useCallback(() => {
-    console.log("CryptosharePage: User initiated disconnect.");
+    console.log("CryptosharePage: User initiated disconnect from ConnectionManager.");
     webRTC.disconnect(); 
-    setChatMessages([]);
-    setDataSnippets([]);
-    setFileActivities([]);
-    receivedFileChunks.current = {};
-    // SDP and ICE display states are reset by handleConnectionStateChange when newState is 'disconnected'
-    setLocalSdpOfferForDisplay(null);
-    setLocalSdpAnswerForDisplay(null);
-    setLocalIceCandidatesForDisplay([]);
+    // State resets (SDP/ICE display, chat, data, files) are handled by handleConnectionStateChange
   }, [webRTC]);
 
+  // Actions for feature components
   const sendChatMessage = useCallback((text: string) => {
     webRTC.sendChatMessage(text);
-    setChatMessages(prev => [...prev, { id: `msg-local-${Date.now()}`, text, sender: 'user', timestamp: new Date() }]);
+    setChatMessages(prev => [...prev, { id: `msg-local-${Date.now()}-${Math.random()}`, text, sender: 'user', timestamp: new Date() }]);
   }, [webRTC]);
 
   const sendDataSnippet = useCallback((content: string) => {
     webRTC.sendDataSnippet(content);
-    setDataSnippets(prev => [{ id: `data-local-${Date.now()}`, content, type: 'sent', timestamp: new Date() }, ...prev].slice(0, 10));
+    setDataSnippets(prev => [{ id: `data-local-${Date.now()}-${Math.random()}`, content, type: 'sent', timestamp: new Date() }, ...prev].slice(0, 10));
   }, [webRTC]);
 
   const sendFile = useCallback((file: File) => {
@@ -260,7 +265,7 @@ export default function CryptosharePage() {
       id: fileId,
       name: file.name,
       size: file.size,
-      status: 'waiting_approval',
+      status: 'waiting_approval', // Waiting for peer to approve
       type: 'outgoing',
       progress: 0,
       file: file, 
@@ -269,7 +274,7 @@ export default function CryptosharePage() {
     webRTC.sendFileMetadata(metadata);
   }, [webRTC]);
 
-  const approveRejectFile = useCallback((fileId: string, approved: boolean) => {
+  const approveOrRejectIncomingFile = useCallback((fileId: string, approved: boolean) => { // Renamed
      webRTC.sendFileApproval(fileId, approved);
      if (approved) {
         setFileActivities(prev => prev.map(f => f.id === fileId && f.type === 'incoming' ? {...f, status: 'transferring'} : f));
@@ -278,48 +283,62 @@ export default function CryptosharePage() {
      }
   }, [webRTC]);
 
+  // Effect for sending file chunks when an outgoing file is approved and status becomes 'transferring'
   useEffect(() => {
     fileActivities.forEach(activity => {
-      if (activity.type === 'outgoing' && activity.status === 'transferring' && activity.file) {
+      if (activity.type === 'outgoing' && activity.status === 'transferring' && activity.file && !activity.progress) { // Ensure only start once
         const file = activity.file;
         const CHUNK_SIZE = 64 * 1024; 
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
         let chunkNumber = 0;
         const reader = new FileReader();
         
+        console.log(`CryptosharePage: Starting to send chunks for file ${activity.name}, ID: ${activity.id}`);
+
         function readNextChunk() {
-          if (chunkNumber >= totalChunks) return;
+          if (chunkNumber >= totalChunks || currentWebRTCState !== 'connected') {
+            if (currentWebRTCState !== 'connected' && chunkNumber < totalChunks) {
+                console.warn(`CryptosharePage: File transfer for ${activity.name} interrupted due to disconnect.`);
+                setFileActivities(prev => prev.map(f => f.id === activity.id ? {...f, status: 'error', progress: undefined} : f)); // Mark as error
+            }
+            return;
+          }
           const offset = chunkNumber * CHUNK_SIZE;
           const slice = file.slice(offset, offset + CHUNK_SIZE);
           reader.readAsArrayBuffer(slice);
         }
 
         reader.onload = (e) => {
-          if (e.target?.result) {
+          if (e.target?.result && currentWebRTCState === 'connected') {
             const chunkData = e.target.result as ArrayBuffer;
-            // Convert ArrayBuffer to Base64 string for sending via JSON
-            const base64ChunkData = btoa(
-                new Uint8Array(chunkData).reduce((data, byte) => data + String.fromCharCode(byte), '')
-            );
+            const base64ChunkData = btoa(new Uint8Array(chunkData).reduce((data, byte) => data + String.fromCharCode(byte), ''));
 
             webRTC.sendFileChunk({
               fileId: activity.id,
               chunkNumber,
               totalChunks,
-              data: base64ChunkData, // Send as base64 string
+              data: base64ChunkData,
               isLast: chunkNumber === totalChunks - 1,
             });
             
             const progress = Math.round(((chunkNumber + 1) / totalChunks) * 100);
-            setFileActivities(prev => prev.map(f => f.id === activity.id ? {...f, progress, status: chunkNumber === totalChunks -1 ? 'transferred': 'transferring'} : f));
+            setFileActivities(prev => prev.map(f => {
+                if (f.id === activity.id) {
+                    const isLastChunkSent = chunkNumber === totalChunks - 1;
+                    return {...f, progress, status: isLastChunkSent ? 'transferred' : 'transferring'};
+                }
+                return f;
+            }));
             
             chunkNumber++;
             if (chunkNumber < totalChunks) {
-              // Add a small delay to avoid overwhelming the data channel, especially for large files
-              setTimeout(readNextChunk, 10); // Adjust delay as needed
+              setTimeout(readNextChunk, 10); // Small delay
             } else if (chunkNumber === totalChunks) {
                 toast({title: "File Sent", description: `${activity.name} sent successfully.`});
             }
+          } else if (currentWebRTCState !== 'connected') {
+             console.warn(`CryptosharePage: File transfer for ${activity.name} (onload) interrupted due to disconnect.`);
+             setFileActivities(prev => prev.map(f => f.id === activity.id ? {...f, status: 'error', progress: undefined} : f));
           }
         };
         reader.onerror = (error) => {
@@ -330,11 +349,15 @@ export default function CryptosharePage() {
         readNextChunk();
       }
     });
-  }, [fileActivities, webRTC, toast]);
+  }, [fileActivities, webRTC, toast, currentWebRTCState]);
 
 
   if (!mounted) {
-    return null; 
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <p>Loading Cryptoshare...</p>
+      </div>
+    );
   }
 
   return (
@@ -346,12 +369,12 @@ export default function CryptosharePage() {
         </CardHeader>
         <CardContent>
           <ConnectionManager
-            currentConnectionState={currentWebRTCState}
+            currentConnectionState={currentWebRTCState} // This is the single source of truth for connection status
             onStartInitiator={handleStartInitiator}
             onProcessOfferAndCreateAnswer={handleProcessOfferAndCreateAnswer}
             onAcceptAnswer={handleAcceptAnswer}
             onAddRemoteIceCandidate={handleAddRemoteIceCandidate}
-            onDisconnect={handleDisconnect}
+            onDisconnect={handleDisconnect} // User-initiated disconnect from ConnectionManager UI
             localSdpOffer={localSdpOfferForDisplay}
             localSdpAnswer={localSdpAnswerForDisplay}
             localIceCandidates={localIceCandidatesForDisplay}
@@ -376,7 +399,7 @@ export default function CryptosharePage() {
             <FileTransfer 
               onSendFile={sendFile} 
               fileActivities={fileActivities}
-              onFileAction={approveRejectFile}
+              onFileAction={approveOrRejectIncomingFile} // Renamed
             />
           </TabsContent>
           <TabsContent value="data-transfer">
@@ -388,7 +411,7 @@ export default function CryptosharePage() {
           <TabsContent value="messaging">
             <Messaging 
               onSendMessage={sendChatMessage}
-              messages={chatMessages}
+              messages={messages}
             />
           </TabsContent>
         </Tabs>

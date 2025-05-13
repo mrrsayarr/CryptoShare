@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -6,37 +5,25 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Zap, Link2, ShieldAlert, ClipboardCopy, ClipboardCheck, Info, VenetianMask, UserPlus, AlertTriangle } from 'lucide-react';
+import { Loader2, Zap, Link2, ShieldAlert, ClipboardCopy, ClipboardCheck, Info, VenetianMask, UserPlus, AlertTriangle, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { PeerConnectionState } from '@/types/cryptoshare';
 
 interface ConnectionManagerProps {
-  currentConnectionState: PeerConnectionState;
+  currentConnectionState: PeerConnectionState; // Primary driver of UI state
   onStartInitiator: () => void;
   onProcessOfferAndCreateAnswer: (offerSdp: string) => void;
   onAcceptAnswer: (answerSdp: string) => void;
   onAddRemoteIceCandidate: (candidateJson: string) => void;
-  onDisconnect: () => void;
-  localSdpOffer: string | null;
-  localSdpAnswer: string | null;
-  localIceCandidates: RTCIceCandidateInit[];
+  onDisconnect: () => void; // User clicks "Disconnect" or "Reset"
+  localSdpOffer: string | null; // From parent (CryptosharePage, fed by useWebRTC)
+  localSdpAnswer: string | null; // From parent
+  localIceCandidates: RTCIceCandidateInit[]; // From parent
 }
 
+// 'Role' determines which set of instructions/UI elements are shown
 type Role = 'none' | 'initiator' | 'guest';
-type SignalingStep = 
-  | 'idle'
-  | 'initiator_offer_generated' 
-  | 'initiator_awaiting_answer'
-  | 'guest_awaiting_offer'
-  | 'guest_answer_generated'
-  | 'guest_awaiting_initiator_ice' // Not strictly used as a step, ICE exchange follows answer
-  | 'ice_exchange' 
-  | 'connected'
-  | 'connecting'
-  | 'failed'
-  | 'disconnected'; // UI state, distinct from currentConnectionState 'disconnected' sometimes
-
 
 export function ConnectionManager({
   currentConnectionState,
@@ -50,78 +37,30 @@ export function ConnectionManager({
   localIceCandidates,
 }: ConnectionManagerProps) {
   const [role, setRole] = useState<Role>('none');
-  const [signalingStep, setSignalingStep] = useState<SignalingStep>('idle');
   
-  const [initiatorOffer, setInitiatorOffer] = useState('');
-  const [guestAnswer, setGuestAnswer] = useState('');
-  const [remoteSdp, setRemoteSdp] = useState(''); 
+  // These are for user input within this component
+  const [remoteSdpForInput, setRemoteSdpForInput] = useState(''); 
   const [remoteIceCandidateInput, setRemoteIceCandidateInput] = useState('');
-  const [localIceCandidatesDisplay, setLocalIceCandidatesDisplay] = useState('');
-
-  const [isLoading, setIsLoading] = useState(false);
+  
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
-
   const { toast } = useToast();
 
+  // Effect to reset role and inputs when the connection fully disconnects or fails
   useEffect(() => {
-    if (localSdpOffer && role === 'initiator') {
-      setInitiatorOffer(localSdpOffer);
-      setSignalingStep('initiator_offer_generated');
-      setIsLoading(false); // Offer generation part is done
+    console.log("ConnectionManager: currentConnectionState prop changed to", currentConnectionState);
+    if (currentConnectionState === 'disconnected' || currentConnectionState === 'failed') {
+      if (role !== 'none') { // Only reset if not already in initial state
+        console.log("ConnectionManager: Resetting role and inputs due to disconnect/fail.");
+        setRole('none');
+      }
+      setRemoteSdpForInput('');
+      setRemoteIceCandidateInput('');
     }
-  }, [localSdpOffer, role]);
+  }, [currentConnectionState, role]);
 
-  useEffect(() => {
-    if (localSdpAnswer && role === 'guest') {
-      setGuestAnswer(localSdpAnswer);
-      setSignalingStep('guest_answer_generated');
-      setIsLoading(false); // Answer generation part is done
-    }
-  }, [localSdpAnswer, role]);
+  const localIceCandidatesDisplay = localIceCandidates.map(c => JSON.stringify(c)).join('\n');
 
-  useEffect(() => {
-     const candidatesJson = localIceCandidates.map(c => JSON.stringify(c)).join('\n');
-     setLocalIceCandidatesDisplay(candidatesJson);
-  }, [localIceCandidates]);
-
-  useEffect(() => {
-    console.log("ConnectionManager: currentConnectionState changed to", currentConnectionState, "current signalingStep:", signalingStep, "current role:", role);
-    setIsLoading(currentConnectionState === 'connecting');
-
-    switch (currentConnectionState) {
-      case 'connected':
-        setSignalingStep('connected');
-        break;
-      case 'failed':
-        setSignalingStep('failed');
-        // Role remains as is, to show "Try again" in context of initiator/guest
-        break;
-      case 'disconnected':
-        // This means a clean disconnect (either after connection, or explicit user action, or failed then reset)
-        setSignalingStep('idle');
-        setRole('none'); // Allow starting over
-        // Clear local visual states if any persisted
-        setInitiatorOffer('');
-        setGuestAnswer('');
-        setRemoteSdp('');
-        setRemoteIceCandidateInput('');
-        setLocalIceCandidatesDisplay('');
-        break;
-      case 'offer_generated':
-        // This state comes from useWebRTC. If role is initiator, ConnectionManager's localSdpOffer useEffect will handle UI.
-        if (role === 'initiator') setIsLoading(false); // No longer 'connecting' for offer generation
-        break;
-      case 'answer_generated':
-        // This state comes from useWebRTC. If role is guest, ConnectionManager's localSdpAnswer useEffect will handle UI.
-        if (role === 'guest') setIsLoading(false); // No longer 'connecting' for answer generation
-        break;
-      // 'connecting' is handled by setIsLoading above.
-      // 'awaiting_offer', 'awaiting_answer' are internal ConnectionManager steps.
-    }
-  }, [currentConnectionState, role]); // Role is needed to correctly interpret offer/answer_generated side effects
-
-
-  const handleCopy = (text: string, id: string) => {
+  const handleCopy = (text: string | null, id: string) => {
     if (!text) {
         toast({ title: "Nothing to Copy", description: `No ${id} data available.`, variant: "default" });
         return;
@@ -135,42 +74,47 @@ export function ConnectionManager({
     });
   };
 
-  const handleStartInitiator = () => {
-    if (signalingStep !== 'idle') return; // Prevent re-initiation if not idle
-    setRole('initiator');
-    setSignalingStep('connecting'); // Optimistic UI update
-    setIsLoading(true);
-    onStartInitiator();
+  const handleStartInitiatorClick = () => {
+    // Button should be disabled if not in a state to start.
+    // currentConnectionState should be 'disconnected' or 'failed' to allow starting.
+    if (currentConnectionState === 'disconnected' || currentConnectionState === 'failed') {
+        setRole('initiator');
+        // Clear any stale input from previous guest attempts
+        setRemoteSdpForInput(''); 
+        setRemoteIceCandidateInput('');
+        onStartInitiator();
+    } else {
+        toast({title: "Action Blocked", description: `Cannot initiate. Current state: ${currentConnectionState}. Please reset first.`, variant: "default"});
+    }
   };
 
-  const handleStartGuest = () => {
-    if (signalingStep !== 'idle') return; // Prevent re-initiation if not idle
-    setRole('guest');
-    setSignalingStep('guest_awaiting_offer');
-    // setIsLoading(false); // No immediate loading, waiting for user input
+  const handleStartGuestClick = () => {
+    if (currentConnectionState === 'disconnected' || currentConnectionState === 'failed') {
+        setRole('guest');
+        setRemoteSdpForInput(''); 
+        setRemoteIceCandidateInput('');
+    } else {
+         toast({title: "Action Blocked", description: `Cannot join. Current state: ${currentConnectionState}. Please reset first.`, variant: "default"});
+    }
   };
   
-  const handleProcessOffer = () => {
-    if (!remoteSdp.trim()) {
+  const handleProcessOfferClick = () => {
+    if (!remoteSdpForInput.trim()) {
         toast({ title: "Error", description: "Offer SDP cannot be empty.", variant: "destructive" });
         return;
     }
-    setSignalingStep('connecting'); // Optimistic UI update
-    setIsLoading(true);
-    onProcessOfferAndCreateAnswer(remoteSdp);
+    onProcessOfferAndCreateAnswer(remoteSdpForInput);
   };
 
-  const handleAcceptAnswer = () => {
-    if (!remoteSdp.trim()) {
+  const handleAcceptAnswerClick = () => {
+    if (!remoteSdpForInput.trim()) {
         toast({ title: "Error", description: "Answer SDP cannot be empty.", variant: "destructive" });
         return;
     }
-    setIsLoading(true); // Will transition to 'connecting' via useWebRTC state change
-    onAcceptAnswer(remoteSdp);
-    setSignalingStep('ice_exchange'); // Move to ICE exchange after answer is accepted by initiator
+    onAcceptAnswer(remoteSdpForInput);
   };
 
-  const handleAddRemoteIce = () => {
+  const handleAddRemoteIceClick = () => {
     if (!remoteIceCandidateInput.trim()) {
         toast({ title: "Info", description: "No ICE candidate data to add.", variant: "default" });
         return;
@@ -196,21 +140,31 @@ export function ConnectionManager({
     }
   };
   
-  const handleDisconnectClick = () => {
-    onDisconnect(); // This will trigger useWebRTC to change currentConnectionState to 'disconnected'
-                    // The useEffect for currentConnectionState will then reset UI to idle.
+  const handleDisconnectOrResetClick = () => {
+    onDisconnect(); // This will trigger useWebRTC to change currentConnectionState, leading to UI reset via useEffect.
   };
 
+  const isLoading = currentConnectionState === 'connecting';
+  const isSessionActive = currentConnectionState === 'connected' || currentConnectionState === 'connecting' || currentConnectionState === 'offer_generated' || currentConnectionState === 'answer_generated';
 
   const renderRoleSelection = () => (
     <div className="space-y-4 text-center">
       <p className="text-muted-foreground">Choose your role to start a P2P connection.</p>
       <div className="flex flex-col sm:flex-row gap-4">
-        <Button onClick={handleStartInitiator} className="w-full" disabled={isLoading || signalingStep !== 'idle'}>
+        <Button 
+          onClick={handleStartInitiatorClick} 
+          className="w-full" 
+          disabled={isLoading || (currentConnectionState !== 'disconnected' && currentConnectionState !== 'failed')}
+        >
           {isLoading && role === 'initiator' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
           Initiate New Session
         </Button>
-        <Button onClick={handleStartGuest} variant="outline" className="w-full" disabled={isLoading || signalingStep !== 'idle'}>
+        <Button 
+          onClick={handleStartGuestClick} 
+          variant="outline" 
+          className="w-full" 
+          disabled={isLoading || (currentConnectionState !== 'disconnected' && currentConnectionState !== 'failed')}
+        >
          {isLoading && role === 'guest' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
           Join Existing Session
         </Button>
@@ -229,83 +183,98 @@ export function ConnectionManager({
   const renderInitiatorSteps = () => (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold text-primary">Initiator Steps:</h3>
-      {signalingStep === 'connecting' && !localSdpOffer && <p className="flex items-center text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating Offer...</p>}
+      {currentConnectionState === 'connecting' && !localSdpOffer && <p className="flex items-center text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating Offer...</p>}
       
-      {signalingStep === 'initiator_offer_generated' && initiatorOffer && (
+      {/* Step 1: Show Offer SDP once generated */}
+      {localSdpOffer && (currentConnectionState === 'offer_generated' || currentConnectionState === 'connecting') && (
         <Card>
           <CardHeader><CardTitle>1. Share Your Offer SDP</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             <Label htmlFor="initiator-offer-sdp">Your Offer SDP (copy this and send to Guest):</Label>
-            <Textarea id="initiator-offer-sdp" value={initiatorOffer} readOnly rows={5} className="bg-muted/50"/>
-            <Button onClick={() => handleCopy(initiatorOffer, 'Offer SDP')} variant="outline" size="sm" className="w-full">
+            <Textarea id="initiator-offer-sdp" value={localSdpOffer} readOnly rows={5} className="bg-muted/50"/>
+            <Button onClick={() => handleCopy(localSdpOffer, 'Offer SDP')} variant="outline" size="sm" className="w-full">
               {copiedStates['Offer SDP'] ? <ClipboardCheck className="mr-2"/> : <ClipboardCopy className="mr-2"/>} Copy Offer
             </Button>
           </CardContent>
         </Card>
       )}
 
-      {(signalingStep === 'initiator_offer_generated' || signalingStep === 'initiator_awaiting_answer' || (signalingStep === 'connecting' && initiatorOffer && !localSdpAnswer)) && (
+      {/* Step 2: Input for Guest's Answer, shown after offer is generated and we are not yet connected/failed */}
+      {localSdpOffer && (currentConnectionState === 'offer_generated' || currentConnectionState === 'connecting') && !currentConnectionState.match(/^(connected|failed)$/) && (
         <Card>
           <CardHeader><CardTitle>2. Paste Guest&apos;s Answer SDP</CardTitle></CardHeader>
           <CardContent className="space-y-2">
-            <Label htmlFor="guest-answer-sdp">Guest&apos;s Answer SDP (paste here):</Label>
-            <Textarea id="guest-answer-sdp" value={remoteSdp} onChange={e => setRemoteSdp(e.target.value)} rows={5} placeholder="Paste Answer SDP from Guest here..." />
-            <Button onClick={handleAcceptAnswer} disabled={isLoading || !remoteSdp.trim() || !initiatorOffer} className="w-full">
-              {isLoading && !localSdpAnswer ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
+            <Label htmlFor="guest-answer-sdp-input">Guest&apos;s Answer SDP (paste here):</Label>
+            <Textarea 
+                id="guest-answer-sdp-input" 
+                value={remoteSdpForInput} 
+                onChange={e => setRemoteSdpForInput(e.target.value)} 
+                rows={5} 
+                placeholder="Paste Answer SDP from Guest here..." 
+                disabled={isLoading && currentConnectionState !== 'offer_generated'}
+            />
+            <Button onClick={handleAcceptAnswerClick} disabled={isLoading || !remoteSdpForInput.trim() || !localSdpOffer} className="w-full">
+              {isLoading && currentConnectionState === 'connecting' && !localSdpAnswer ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
               Process Answer & Start ICE
             </Button>
           </CardContent>
         </Card>
       )}
-      {renderIceExchangeSection()}
+      {/* ICE Exchange Section: shown if offer is generated and answer has been processed (implicitly moving state towards 'connecting' or 'connected') */}
+      {(currentConnectionState === 'connecting' || currentConnectionState === 'connected' || currentConnectionState === 'offer_generated' || currentConnectionState === 'answer_generated' ) && localSdpOffer && renderIceExchangeSection()}
     </div>
   );
 
   const renderGuestSteps = () => (
      <div className="space-y-4">
       <h3 className="text-lg font-semibold text-primary">Guest Steps:</h3>
-      {signalingStep === 'guest_awaiting_offer' && (
+      {/* Step 1: Input for Initiator's Offer */}
+      {(currentConnectionState === 'disconnected' || currentConnectionState === 'failed' || currentConnectionState === 'connecting') && !localSdpAnswer && (
         <Card>
           <CardHeader><CardTitle>1. Paste Initiator&apos;s Offer SDP</CardTitle></CardHeader>
           <CardContent className="space-y-2">
-            <Label htmlFor="initiator-offer-sdp-input">Initiator&apos;s Offer SDP (paste here):</Label>
-            <Textarea id="initiator-offer-sdp-input" value={remoteSdp} onChange={e => setRemoteSdp(e.target.value)} rows={5} placeholder="Paste Offer SDP from Initiator here..." />
-            <Button onClick={handleProcessOffer} disabled={isLoading || !remoteSdp.trim()} className="w-full">
+            <Label htmlFor="initiator-offer-sdp-input-guest">Initiator&apos;s Offer SDP (paste here):</Label>
+            <Textarea 
+                id="initiator-offer-sdp-input-guest" 
+                value={remoteSdpForInput} 
+                onChange={e => setRemoteSdpForInput(e.target.value)} 
+                rows={5} 
+                placeholder="Paste Offer SDP from Initiator here..." 
+                disabled={isLoading}
+            />
+            <Button onClick={handleProcessOfferClick} disabled={isLoading || !remoteSdpForInput.trim()} className="w-full">
               {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
               Process Offer & Generate Answer
             </Button>
           </CardContent>
         </Card>
       )}
+      {currentConnectionState === 'connecting' && !localSdpAnswer && role === 'guest' && <p className="flex items-center text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing Offer & Generating Answer...</p>}
 
-      {signalingStep === 'connecting' && role === 'guest' && !guestAnswer && <p className="flex items-center text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing Offer & Generating Answer...</p>}
-
-      {signalingStep === 'guest_answer_generated' && guestAnswer && (
+      {/* Step 2: Show Guest's Answer SDP once generated */}
+      {localSdpAnswer && (currentConnectionState === 'answer_generated' || currentConnectionState === 'connecting') && (
          <Card>
           <CardHeader><CardTitle>2. Share Your Answer SDP</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             <Label htmlFor="guest-answer-sdp-output">Your Answer SDP (copy this and send to Initiator):</Label>
-            <Textarea id="guest-answer-sdp-output" value={guestAnswer} readOnly rows={5} className="bg-muted/50" />
-             <Button onClick={() => handleCopy(guestAnswer, 'Answer SDP')} variant="outline" size="sm" className="w-full">
+            <Textarea id="guest-answer-sdp-output" value={localSdpAnswer} readOnly rows={5} className="bg-muted/50" />
+             <Button onClick={() => handleCopy(localSdpAnswer, 'Answer SDP')} variant="outline" size="sm" className="w-full">
               {copiedStates['Answer SDP'] ? <ClipboardCheck className="mr-2"/> : <ClipboardCopy className="mr-2"/>} Copy Answer
             </Button>
           </CardContent>
         </Card>
       )}
-       {(signalingStep === 'guest_answer_generated' || signalingStep === 'ice_exchange' || (signalingStep === 'connecting' && guestAnswer)) && renderIceExchangeSection()}
+      {/* ICE Exchange Section for Guest: shown if answer is generated */}
+      {(currentConnectionState === 'connecting' || currentConnectionState === 'connected' || currentConnectionState === 'answer_generated') && localSdpAnswer && renderIceExchangeSection()}
     </div>
   );
 
  const renderIceExchangeSection = () => {
-    // Show ICE section if:
-    // - Explicitly in 'ice_exchange' step (after initiator accepts answer)
-    // - Initiator: offer generated, AND answer processed (remoteSdp was filled and 'Process Answer' clicked)
-    // - Guest: answer generated
-    const showForInitiatorAfterAnswerProcessed = role === 'initiator' && signalingStep === 'ice_exchange';
-    const showForGuestAfterAnswerGenerated = role === 'guest' && localSdpAnswer;
-
-
-    if (showForInitiatorAfterAnswerProcessed || showForGuestAfterAnswerGenerated) {
+    // Show ICE section if we are in a state where ICE candidates are relevant
+    const showIce = currentConnectionState === 'connecting' || currentConnectionState === 'connected' || 
+                    currentConnectionState === 'offer_generated' || currentConnectionState === 'answer_generated';
+    
+    if (showIce && (localSdpOffer || localSdpAnswer)) { // Ensure SDP has been generated/processed at least
         return (
             <Card>
                 <CardHeader>
@@ -322,8 +291,15 @@ export function ConnectionManager({
                     </div>
                     <div>
                         <Label htmlFor="remote-ice-candidates">Peer&apos;s ICE Candidates (paste here, one JSON object per line):</Label>
-                        <Textarea id="remote-ice-candidates" value={remoteIceCandidateInput} onChange={e => setRemoteIceCandidateInput(e.target.value)} rows={5} placeholder="Paste peer's ICE candidates here..."/>
-                        <Button onClick={handleAddRemoteIce} disabled={isLoading || currentConnectionState === 'connected'} className="w-full mt-1">
+                        <Textarea 
+                            id="remote-ice-candidates" 
+                            value={remoteIceCandidateInput} 
+                            onChange={e => setRemoteIceCandidateInput(e.target.value)} 
+                            rows={5} 
+                            placeholder="Paste peer's ICE candidates here..."
+                            disabled={currentConnectionState === 'connected' || isLoading}
+                        />
+                        <Button onClick={handleAddRemoteIceClick} disabled={currentConnectionState === 'connected' || isLoading} className="w-full mt-1">
                             {isLoading && currentConnectionState !== 'connected' ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <UserPlus className="mr-2 h-4 w-4"/>} Add Peer&apos;s Candidates
                         </Button>
                     </div>
@@ -339,7 +315,7 @@ export function ConnectionManager({
         <ShieldAlert className="h-12 w-12 text-green-500 mx-auto"/>
         <p className="text-xl font-semibold text-green-500">Connected!</p>
         <p className="text-muted-foreground">You can now use the File Transfer, Data Transfer, and Messaging tabs.</p>
-        <Button onClick={handleDisconnectClick} variant="destructive" className="w-full">
+        <Button onClick={handleDisconnectOrResetClick} variant="destructive" className="w-full">
             <Link2 className="mr-2 h-4 w-4" />
             Disconnect
         </Button>
@@ -351,42 +327,39 @@ export function ConnectionManager({
         <AlertTriangle className="h-12 w-12 text-red-500 mx-auto"/>
         <p className="text-xl font-semibold text-red-500">Connection Failed</p>
         <p className="text-muted-foreground">Something went wrong. Please ensure data was copied correctly and try again.</p>
-        <Button onClick={handleDisconnectClick} variant="outline" className="w-full">
-            Reset and Try Again
+        <Button onClick={handleDisconnectOrResetClick} variant="outline" className="w-full">
+           <RotateCcw className="mr-2 h-4 w-4" /> Reset and Try Again
         </Button>
     </div>
   );
 
+  const statusText = isLoading ? "Processing..." :
+                     currentConnectionState.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  const statusColor = currentConnectionState === 'connected' ? 'text-green-500' :
+                      currentConnectionState === 'failed' ? 'text-red-500' :
+                      isLoading ? 'text-yellow-500' :
+                      'text-foreground/80';
 
   return (
     <div className="space-y-6">
-      {signalingStep === 'idle' && renderRoleSelection()}
-      {role === 'initiator' && signalingStep !== 'idle' && signalingStep !== 'connected' && signalingStep !== 'failed' && renderInitiatorSteps()}
-      {role === 'guest' && signalingStep !== 'idle' && signalingStep !== 'connected' && signalingStep !== 'failed' && renderGuestSteps()}
-      {signalingStep === 'connected' && renderConnectedState()}
-      {signalingStep === 'failed' && renderFailedState()}
+      {role === 'none' && currentConnectionState !== 'connected' && currentConnectionState !== 'failed' && renderRoleSelection()}
+      {role === 'initiator' && currentConnectionState !== 'connected' && currentConnectionState !== 'failed' && renderInitiatorSteps()}
+      {role === 'guest' && currentConnectionState !== 'connected' && currentConnectionState !== 'failed' && renderGuestSteps()}
+      
+      {currentConnectionState === 'connected' && renderConnectedState()}
+      {currentConnectionState === 'failed' && renderFailedState()}
 
-      {(signalingStep !== 'idle' && signalingStep !== 'connected' && signalingStep !== 'failed' && role !== 'none') && (
-         <Button onClick={handleDisconnectClick} variant="outline" className="w-full mt-4">
+      {/* Reset button if not connected but a role is chosen, or if failed */}
+      {(role !== 'none' && currentConnectionState !== 'connected' && currentConnectionState !== 'failed') && (
+         <Button onClick={handleDisconnectOrResetClick} variant="outline" className="w-full mt-4">
             <VenetianMask className="mr-2 h-4 w-4" />
             Reset Connection Process
         </Button>
       )}
       
        <div className="text-center text-sm pt-2 text-muted-foreground">
-        Status: <span className={`font-semibold ${
-            currentConnectionState === 'connected' ? 'text-green-500' :
-            currentConnectionState === 'failed' ? 'text-red-500' :
-            isLoading ? 'text-yellow-500' : // isLoading is true when currentConnectionState is 'connecting'
-            'text-foreground/80' 
-        }`}>
-            {isLoading ? "Processing..." : 
-             signalingStep === 'failed' ? "Failed" : // Show "Failed" if UI step is failed, even if underlying might be 'disconnected'
-             currentConnectionState.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-        </span>
+        Status: <span className={`font-semibold ${statusColor}`}>{statusText}</span>
       </div>
     </div>
   );
 }
-
-    
