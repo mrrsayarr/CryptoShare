@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -5,74 +6,29 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
-import { MessageSquare, Send, User, Bot } from 'lucide-react'; // Bot icon for mock peer
+import { MessageSquare, Send, User, Bot } from 'lucide-react';
+import type { ChatMessage } from '@/types/cryptoshare';
 
 interface MessagingProps {
-  sessionKey: string; // Used for mock E2EE
+  onSendMessage: (text: string) => void;
+  messages: ChatMessage[];
 }
 
-interface Message {
-  id: string;
-  text: string;
-  sender: 'user' | 'peer';
-  timestamp: Date;
-}
-
-export function Messaging({ sessionKey }: MessagingProps) {
+export function Messaging({ onSendMessage, messages }: MessagingProps) {
   const [currentMessage, setCurrentMessage] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
-  const { toast } = useToast();
   const scrollAreaViewportRef = useRef<HTMLDivElement>(null);
 
-
-  // Scroll to bottom when new messages are added
   useEffect(() => {
     if (scrollAreaViewportRef.current) {
       scrollAreaViewportRef.current.scrollTop = scrollAreaViewportRef.current.scrollHeight;
     }
   }, [messages]);
 
-
-  // Simulate receiving messages
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout;
-    if (sessionKey) {
-      intervalId = setInterval(() => {
-        if (Math.random() < 0.4) { // Randomly simulate incoming message
-          const mockReplies = ["Got it!", "Okay.", "Interesting...", "Thanks for sharing.", "Let me check."];
-          const randomReply = mockReplies[Math.floor(Math.random() * mockReplies.length)];
-          const newMessage: Message = {
-            id: `peer-${Date.now()}`,
-            text: randomReply,
-            sender: 'peer',
-            timestamp: new Date(),
-          };
-          setMessages(prev => [...prev, newMessage]);
-        }
-      }, 7000 + Math.random() * 5000 ); // Peer replies every 7-12 seconds on average
-      return () => clearInterval(intervalId);
-    }
-  }, [sessionKey]);
-
-  const handleSendMessage = (e?: React.FormEvent<HTMLFormElement>) => {
+  const handleFormSubmit = (e?: React.FormEvent<HTMLFormElement>) => {
     e?.preventDefault();
     if (!currentMessage.trim()) return;
-    if (!sessionKey) {
-      toast({ title: 'Error', description: 'Session key is missing. Cannot encrypt message.', variant: 'destructive' });
-      return;
-    }
-
-    const newMessage: Message = {
-      id: `user-${Date.now()}`,
-      text: currentMessage,
-      sender: 'user',
-      timestamp: new Date(),
-    };
-    setMessages(prev => [...prev, newMessage]);
+    onSendMessage(currentMessage);
     setCurrentMessage('');
-    // Mock: In a real app, send this message to the peer
-    // toast({ title: 'Message Sent', description: 'Your message has been sent (mocked).' });
   };
   
   const formatTimestamp = (date: Date) => {
@@ -105,7 +61,7 @@ export function Messaging({ sessionKey }: MessagingProps) {
                 >
                   <p className="text-sm break-words">{msg.text}</p>
                   <p className={`text-xs mt-1 ${msg.sender === 'user' ? 'text-primary-foreground/70 text-right' : 'text-muted-foreground text-right'}`}>
-                    {formatTimestamp(msg.timestamp)}
+                    {formatTimestamp(new Date(msg.timestamp))}
                   </p>
                 </div>
                  {msg.sender === 'user' && <User className="h-6 w-6 text-accent self-start flex-shrink-0" />}
@@ -118,7 +74,7 @@ export function Messaging({ sessionKey }: MessagingProps) {
         </ScrollArea>
       </CardContent>
       <CardFooter className="pt-4 border-t">
-        <form onSubmit={handleSendMessage} className="flex w-full space-x-2 items-center">
+        <form onSubmit={handleFormSubmit} className="flex w-full space-x-2 items-center">
           <Input
             type="text"
             placeholder="Type your message..."

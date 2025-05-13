@@ -1,6 +1,7 @@
+
 "use client";
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,44 +9,35 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, Link2, Zap, ShieldAlert, Copy, Check } from 'lucide-react';
 import { suggestStrongerPasswords } from '@/app/password-strength/actions';
 import type { SuggestStrongerPasswordsOutput } from '@/app/password-strength/actions';
-// AlertDialog components are not used, so they can be removed if not planned for immediate use.
-// For now, keeping them as they might be intended for future features.
-/*
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-*/
 
 interface ConnectionManagerProps {
   isConnected: boolean;
-  setIsConnected: (isConnected: boolean) => void;
-  sessionKey: string;
-  setSessionKey: (key: string) => void;
+  onConnect: (sessionKey: string) => void;
+  onDisconnect: () => void;
+  initialSessionKey: string;
 }
 
 export function ConnectionManager({
   isConnected,
-  setIsConnected,
-  sessionKey,
-  setSessionKey,
+  onConnect,
+  onDisconnect,
+  initialSessionKey,
 }: ConnectionManagerProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [currentSessionKey, setCurrentSessionKey] = useState(initialSessionKey);
+  const [isLoading, setIsLoading] = useState(false); // General loading for connect/disconnect/strength check
+  const [isGeneratingKey, setIsGeneratingKey] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [passwordSuggestions, setPasswordSuggestions] = useState<SuggestStrongerPasswordsOutput | null>(null);
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
 
-  const handleConnect = () => {
-    if (!sessionKey) {
+  useEffect(() => {
+    // If parent changes initialSessionKey (e.g. on full disconnect and reset from parent)
+    setCurrentSessionKey(initialSessionKey);
+  }, [initialSessionKey]);
+
+  const handleConnectClick = () => {
+    if (!currentSessionKey) {
       toast({
         title: 'Error',
         description: 'Session key cannot be empty.',
@@ -54,58 +46,42 @@ export function ConnectionManager({
       return;
     }
     setIsLoading(true);
-    // Mock connection
-    setTimeout(() => {
-      setIsConnected(true);
-      setIsLoading(false);
-      toast({
-        title: 'Connected',
-        description: `Successfully connected with key: ${sessionKey.substring(0,8)}... (Mocked)`,
-      });
-    }, 1500);
+    onConnect(currentSessionKey);
+    // setIsLoading(false) will be handled by parent via isConnected prop changing connectionState
   };
 
-  const handleDisconnect = () => {
+  const handleDisconnectClick = () => {
     setIsLoading(true);
-    // Mock disconnection
-    setTimeout(() => {
-      setIsConnected(false);
-      setIsLoading(false);
-      // setSessionKey(''); // Optionally clear the key on disconnect
-      toast({
-        title: 'Disconnected',
-        description: 'Connection closed.',
-      });
-    }, 1000);
+    onDisconnect();
+     // setIsLoading(false) will be handled by parent via isConnected prop changing connectionState
   };
 
   const generateKey = () => {
-    setIsGenerating(true);
-    // Mock key generation
-    setTimeout(() => {
-      // A more secure key generation method should be used in a real app
+    setIsGeneratingKey(true);
+    // Key generation logic, should be cryptographically strong in a real app
+    setTimeout(() => { // Simulating async generation
       const newKey = Array(32).fill(null).map(() => Math.floor(Math.random() * 16).toString(16)).join('');
-      setSessionKey(newKey);
-      setIsGenerating(false);
-      setShowSuggestions(false); // Hide suggestions if a new key is generated
+      setCurrentSessionKey(newKey);
+      setIsGeneratingKey(false);
+      setShowSuggestions(false);
       setPasswordSuggestions(null);
       toast({
         title: 'Key Generated',
         description: 'A new session key has been generated.',
       });
-    }, 500);
+    }, 300);
   };
 
   const checkPasswordStrength = useCallback(async () => {
-    if (!sessionKey || sessionKey.length < 8) {
-      toast({ title: "Weak Key", description: "Key is too short to analyze. Minimum 8 characters.", variant: "destructive"});
+    if (!currentSessionKey || currentSessionKey.length < 6) { // GenAI might need some length
+      toast({ title: "Weak Key", description: "Key is too short to analyze. Minimum 6 characters.", variant: "destructive"});
       setPasswordSuggestions(null);
       setShowSuggestions(false);
       return;
     }
-    setIsLoading(true); // Use a different loading state? Or ensure it's okay to reuse.
+    setIsLoading(true);
     try {
-      const result = await suggestStrongerPasswords({ password: sessionKey });
+      const result = await suggestStrongerPasswords({ password: currentSessionKey });
       setPasswordSuggestions(result);
       setShowSuggestions(true);
       if(result.suggestions.length > 0) {
@@ -120,10 +96,10 @@ export function ConnectionManager({
     } finally {
       setIsLoading(false);
     }
-  }, [sessionKey, toast]);
+  }, [currentSessionKey, toast]);
 
   const handleCopyKey = () => {
-    navigator.clipboard.writeText(sessionKey).then(() => {
+    navigator.clipboard.writeText(currentSessionKey).then(() => {
       setCopied(true);
       toast({ title: "Copied!", description: "Session key copied to clipboard." });
       setTimeout(() => setCopied(false), 2000);
@@ -131,6 +107,11 @@ export function ConnectionManager({
       toast({ title: "Error", description: "Failed to copy key.", variant: "destructive" });
     });
   };
+  
+  // Effect to turn off general loading when isConnected changes (driven by parent)
+  useEffect(() => {
+    setIsLoading(false);
+  }, [isConnected]);
 
   return (
     <div className="space-y-6">
@@ -139,19 +120,19 @@ export function ConnectionManager({
         <div className="flex space-x-2">
           <Input
             id="session-key"
-            type="text" // Consider type="password" if key should be obscured, or allow toggle
+            type="text"
             placeholder="Enter or generate a session key"
-            value={sessionKey}
+            value={currentSessionKey}
             onChange={(e) => {
-              setSessionKey(e.target.value);
-              setShowSuggestions(false); // Hide suggestions when key changes
+              setCurrentSessionKey(e.target.value);
+              setShowSuggestions(false);
               setPasswordSuggestions(null);
             }}
-            disabled={isConnected || isLoading}
+            disabled={isConnected || isLoading || isGeneratingKey}
             className="bg-background border-border focus:ring-primary"
           />
-          {sessionKey && !isConnected && (
-             <Button variant="ghost" size="icon" onClick={handleCopyKey} title="Copy key" disabled={isLoading}>
+          {currentSessionKey && !isConnected && (
+             <Button variant="ghost" size="icon" onClick={handleCopyKey} title="Copy key" disabled={isLoading || isGeneratingKey}>
               {copied ? <Check className="h-5 w-5 text-green-500" /> : <Copy className="h-5 w-5" />}
             </Button>
           )}
@@ -159,13 +140,13 @@ export function ConnectionManager({
 
         {!isConnected && (
           <p className="text-xs text-muted-foreground pt-1">
-            To connect with a peer: 1. One user generates or enters a key. 2. Share this exact key securely with your peer. 3. Both users enter the same key above and click 'Connect'.
+            To connect: 1. One user generates/enters a key. 2. Share key securely. 3. Both enter same key & click 'Connect'.
           </p>
         )}
 
-         {!isConnected && sessionKey && sessionKey.length > 0 && (
-            <Button onClick={checkPasswordStrength} variant="outline" className="w-full mt-2" disabled={isLoading || isGenerating}>
-              {isLoading && !isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldAlert className="mr-2 h-4 w-4" />}
+         {!isConnected && currentSessionKey && currentSessionKey.length > 0 && (
+            <Button onClick={checkPasswordStrength} variant="outline" className="w-full mt-2" disabled={isLoading || isGeneratingKey}>
+              {isLoading && !isGeneratingKey ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldAlert className="mr-2 h-4 w-4" />}
               Check Key Strength / Get Suggestions
             </Button>
           )}
@@ -185,28 +166,28 @@ export function ConnectionManager({
       )}
       
       <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 pt-2">
-        <Button onClick={generateKey} variant="outline" className="w-full" disabled={isConnected || isLoading || isGenerating}>
-          {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
+        <Button onClick={generateKey} variant="outline" className="w-full" disabled={isConnected || isLoading || isGeneratingKey}>
+          {isGeneratingKey ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
           Generate Secure Key
         </Button>
         {isConnected ? (
-          <Button onClick={handleDisconnect} variant="destructive" className="w-full" disabled={isLoading && !isGenerating /* Allow disconnect even if strength check is loading */}>
-            {isLoading && !isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
+          <Button onClick={handleDisconnectClick} variant="destructive" className="w-full" disabled={isLoading && !isGeneratingKey}>
+            {isLoading && !isGeneratingKey ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
             Disconnect
           </Button>
         ) : (
-          <Button onClick={handleConnect} className="w-full" disabled={(isLoading && !isGenerating) || !sessionKey}>
-            {isLoading && !isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
+          <Button onClick={handleConnectClick} className="w-full" disabled={isLoading || isGeneratingKey || !currentSessionKey}>
+            {isLoading && !isGeneratingKey ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
             Connect
           </Button>
         )}
       </div>
 
       <div className="text-center text-sm pt-2">
-        Status: {isLoading && !isGenerating ? (
+        Status: {isLoading && !isGeneratingKey ? (
           <span className="text-yellow-500 font-semibold">Processing...</span>
         ) : isConnected ? (
-          <span className="text-green-500 font-semibold">Connected (Mocked)</span>
+          <span className="text-green-500 font-semibold">Connected</span>
         ) : (
           <span className="text-red-500 font-semibold">Disconnected</span>
         )}
