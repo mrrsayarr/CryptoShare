@@ -35,21 +35,62 @@ export function useWebRTC({
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const [connectionState, setConnectionState] = useState<PeerConnectionState>('disconnected');
-  const iceCandidatesQueueRef = useRef<RTCIceCandidate[]>([]); // Queue candidates received before remote description is set
+  const iceCandidatesQueueRef = useRef<RTCIceCandidate[]>([]);
 
   const updateConnectionState = useCallback((newState: PeerConnectionState, details?: string) => {
-    setConnectionState(newState);
-    onConnectionStateChange?.(newState, details);
+    setConnectionState(prevState => {
+      if (prevState === newState && !details && newState !== 'connecting') return prevState; 
+      onConnectionStateChange?.(newState, details);
+      return newState;
+    });
   }, [onConnectionStateChange]);
+
+  const disconnectCleanup = useCallback(() => {
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.onicecandidate = null;
+      peerConnectionRef.current.oniceconnectionstatechange = null;
+      peerConnectionRef.current.onconnectionstatechange = null;
+      peerConnectionRef.current.ondatachannel = null;
+      if (peerConnectionRef.current.signalingState !== 'closed') {
+        peerConnectionRef.current.close();
+      }
+      peerConnectionRef.current = null;
+    }
+    if (dataChannelRef.current) {
+      dataChannelRef.current.onopen = null;
+      dataChannelRef.current.onclose = null;
+      dataChannelRef.current.onerror = null;
+      dataChannelRef.current.onmessage = null;
+      if (dataChannelRef.current.readyState !== 'closed') {
+        dataChannelRef.current.close();
+      }
+      dataChannelRef.current = null;
+    }
+    iceCandidatesQueueRef.current = [];
+  }, []);
+
+  const internalDisconnectHandler = useCallback(() => {
+    console.log("internalDisconnectHandler called. Current PC state:", peerConnectionRef.current?.connectionState, "Signaling state:", peerConnectionRef.current?.signalingState);
+    disconnectCleanup();
+    updateConnectionState('disconnected', 'User initiated disconnect.');
+  }, [disconnectCleanup, updateConnectionState]);
+
+  const internalDisconnectHandlerRef = useRef(internalDisconnectHandler);
+  useEffect(() => {
+    internalDisconnectHandlerRef.current = internalDisconnectHandler;
+  }, [internalDisconnectHandler]);
+
 
   const setupDataChannelEvents = useCallback((dc: RTCDataChannel) => {
     dc.onopen = () => {
       console.log('Data channel opened');
-      updateConnectionState('connected');
+      if (peerConnectionRef.current && (peerConnectionRef.current.connectionState === 'connected' || peerConnectionRef.current.iceConnectionState === 'connected' || peerConnectionRef.current.iceConnectionState === 'completed')) {
+        updateConnectionState('connected', 'Data channel ready');
+      }
     };
     dc.onclose = () => {
       console.log('Data channel closed');
-      // updateConnectionState('disconnected'); // Usually handled by peer connection state
+      // updateConnectionState('disconnected', 'Data channel closed'); // Let PC state handle primary disconnect
     };
     dc.onerror = (error) => {
       console.error('Data channel error:', error);
@@ -79,8 +120,8 @@ export function useWebRTC({
   }, [onMessageReceived, onDataSnippetReceived, onFileMetadataReceived, onFileApproved, onFileRejected, onFileChunkReceived, updateConnectionState]);
 
   const createPeerConnection = useCallback(() => {
-    if (peerConnectionRef.current) {
-        console.warn("PeerConnection already exists. Closing existing one.");
+    if (peerConnectionRef.current && peerConnectionRef.current.signalingState !== 'closed') {
+        console.warn("PeerConnection already exists and not closed. Closing existing one.");
         peerConnectionRef.current.close();
     }
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -93,39 +134,53 @@ export function useWebRTC({
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.log('ICE connection state change:', pc.iceConnectionState);
-      if (['disconnected', 'closed', 'failed'].includes(pc.iceConnectionState)) {
-        if (connectionState !== 'disconnected' && connectionState !== 'failed') {
-            updateConnectionState('disconnected', `ICE state: ${pc.iceConnectionState}`);
-            onRemotePeerDisconnected?.();
-        }
+      const currentPc = peerConnectionRef.current;
+      if (!currentPc) return;
+      console.log('ICE connection state change:', currentPc.iceConnectionState);
+      if (currentPc.iceConnectionState === 'failed') {
+        updateConnectionState('failed', `ICE state: ${currentPc.iceConnectionState}`);
+      } else if (currentPc.iceConnectionState === 'disconnected' || currentPc.iceConnectionState === 'closed') {
+         // Delegate to onconnectionstatechange for more unified state management
       }
     };
     
     pc.onconnectionstatechange = () => {
-      console.log('Connection state change:', pc.connectionState);
-      switch (pc.connectionState) {
+      const currentPc = peerConnectionRef.current;
+      if (!currentPc) return;
+
+      const newPcState = currentPc.connectionState;
+      console.log('RTC PeerConnection state change:', newPcState);
+
+      switch (newPcState) {
         case 'connected':
-          if (!dataChannelRef.current || dataChannelRef.current.readyState !== 'open') {
-             // Wait for data channel to be open or rely on its onopen
-          } else {
-             updateConnectionState('connected');
-          }
-          break;
-        case 'disconnected':
-        case 'closed':
-           if (connectionState !== 'disconnected' && connectionState !== 'failed') {
-            updateConnectionState('disconnected', `Connection state: ${pc.connectionState}`);
-            onRemotePeerDisconnected?.();
+          if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
+            updateConnectionState('connected', `PeerConnection state: ${newPcState}`);
           }
           break;
         case 'failed':
-          updateConnectionState('failed', `Connection state: ${pc.connectionState}`);
+          updateConnectionState('failed', `PeerConnection state: ${newPcState}`);
           onRemotePeerDisconnected?.();
           break;
-        case 'new':
+        case 'disconnected':
+        case 'closed':
+          if (currentPc.signalingState === 'closed') {
+             updateConnectionState('disconnected', `PeerConnection state: ${newPcState} (Intentional)`);
+          } else {
+             updateConnectionState('failed', `PeerConnection state: ${newPcState} (Unexpected)`);
+             onRemotePeerDisconnected?.();
+          }
+          break;
+        case 'new': 
+            updateConnectionState('disconnected', `PeerConnection state: ${newPcState}`);
+            break;
         case 'connecting':
-          if (connectionState !== 'connecting') updateConnectionState('connecting');
+           setConnectionState(prevState => {
+            if (prevState !== 'connected' && prevState !== 'failed') {
+              onConnectionStateChange?.('connecting', `PeerConnection state: ${newPcState}`);
+              return 'connecting';
+            }
+            return prevState;
+          });
           break;
       }
     };
@@ -136,14 +191,15 @@ export function useWebRTC({
     };
     
     return pc;
-  }, [onLocalIceCandidateReady, updateConnectionState, onRemotePeerDisconnected, setupDataChannelEvents, connectionState]);
+  }, [onLocalIceCandidateReady, updateConnectionState, onRemotePeerDisconnected, setupDataChannelEvents, onConnectionStateChange]);
 
   const startInitiatorSession = useCallback(async () => {
     if (connectionState !== 'disconnected') {
-      console.warn("Cannot start initiator session, already connected or connecting.");
-      return;
+      console.warn("Cannot start initiator session, not in disconnected state. Current state:", connectionState);
+      internalDisconnectHandlerRef.current(); 
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
-    updateConnectionState('connecting', 'Initiator starting...');
+    updateConnectionState('connecting', 'Initiator starting session...');
     const pc = createPeerConnection();
     const dc = pc.createDataChannel(DATA_CHANNEL_LABEL);
     setupDataChannelEvents(dc);
@@ -151,8 +207,8 @@ export function useWebRTC({
     try {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      updateConnectionState('offer_generated', 'Offer SDP generated.');
       onLocalSdpReady?.('offer', offer.sdp || '');
+      updateConnectionState('offer_generated', 'Offer SDP generated.'); 
     } catch (error) {
       console.error('Error creating offer:', error);
       updateConnectionState('failed', 'Error creating offer.');
@@ -160,45 +216,44 @@ export function useWebRTC({
   }, [createPeerConnection, setupDataChannelEvents, updateConnectionState, onLocalSdpReady, connectionState]);
 
   const startGuestSessionAndCreateAnswer = useCallback(async (offerSdp: string) => {
-     if (connectionState !== 'disconnected' && connectionState !== 'awaiting_offer') {
-      console.warn("Cannot start guest session, state is not disconnected or awaiting_offer.");
-      // return; // Allow if awaiting_offer
+     if (connectionState !== 'disconnected') { 
+      console.warn("Cannot start guest session, state is not disconnected. Current state:", connectionState);
+      internalDisconnectHandlerRef.current();
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
     updateConnectionState('connecting', 'Guest processing offer...');
     const pc = createPeerConnection();
     
     try {
       await pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
-      // Process any queued ICE candidates
-      while(iceCandidatesQueueRef.current.length > 0) {
-        const candidate = iceCandidatesQueueRef.current.shift();
-        if (candidate) await pc.addIceCandidate(candidate);
-      }
+      iceCandidatesQueueRef.current.forEach(async candidate => { 
+          if (pc.remoteDescription) await pc.addIceCandidate(candidate);
+      });
+      iceCandidatesQueueRef.current = []; 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      updateConnectionState('answer_generated', 'Answer SDP generated.');
       onLocalSdpReady?.('answer', answer.sdp || '');
+      updateConnectionState('answer_generated', 'Answer SDP generated.');
     } catch (error) {
-      console.error('Error creating answer or setting remote description:', error);
+      console.error('Error creating answer or setting remote description (offer):', error);
       updateConnectionState('failed', 'Error processing offer or creating answer.');
     }
   }, [createPeerConnection, updateConnectionState, onLocalSdpReady, connectionState]);
 
   const acceptAnswer = useCallback(async (answerSdp: string) => {
-    if (!peerConnectionRef.current || connectionState !== 'offer_generated') {
-        console.error("Cannot accept answer: No peer connection or not in 'offer_generated' state.", peerConnectionRef.current, connectionState);
+    const currentPc = peerConnectionRef.current;
+    if (!currentPc || connectionState !== 'offer_generated' || !currentPc.localDescription || currentPc.remoteDescription) {
+        console.error("Cannot accept answer: Invalid state or peer connection.", {pcExists: !!currentPc, connectionState, localDesc: !!currentPc?.localDescription, remoteDesc: !!currentPc?.remoteDescription });
         updateConnectionState('failed', 'Error accepting answer: Invalid state.');
         return;
     }
     updateConnectionState('connecting', 'Processing answer...');
     try {
-      await peerConnectionRef.current.setRemoteDescription({ type: 'answer', sdp: answerSdp });
-       // Process any queued ICE candidates
-      while(iceCandidatesQueueRef.current.length > 0) {
-        const candidate = iceCandidatesQueueRef.current.shift();
-        if (candidate) await peerConnectionRef.current.addIceCandidate(candidate);
-      }
-      // Connection should establish now, state will be updated by onconnectionstatechange or ondatachannel.onopen
+      await currentPc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+      iceCandidatesQueueRef.current.forEach(async candidate => {
+        if (currentPc.remoteDescription) await currentPc.addIceCandidate(candidate);
+      });
+      iceCandidatesQueueRef.current = [];
     } catch (error) {
       console.error('Error setting remote description (answer):', error);
       updateConnectionState('failed', 'Error processing answer.');
@@ -206,41 +261,33 @@ export function useWebRTC({
   }, [updateConnectionState, connectionState]);
 
   const addRemoteIceCandidate = useCallback(async (candidateInit: RTCIceCandidateInit) => {
-    if (!peerConnectionRef.current) {
-      console.warn('Peer connection not ready, queuing ICE candidate.');
+    const currentPc = peerConnectionRef.current;
+    if (!currentPc) {
+      console.warn('Peer connection not ready, queuing ICE candidate (no PC).');
       iceCandidatesQueueRef.current.push(new RTCIceCandidate(candidateInit));
       return;
     }
-    if (!peerConnectionRef.current.remoteDescription) {
+    if (!currentPc.remoteDescription) {
         console.warn('Remote description not set, queuing ICE candidate.');
         iceCandidatesQueueRef.current.push(new RTCIceCandidate(candidateInit));
         return;
     }
     try {
-      await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidateInit));
+      await currentPc.addIceCandidate(new RTCIceCandidate(candidateInit));
     } catch (error) {
-      console.error('Error adding remote ICE candidate:', error);
+      if (!error?.toString().includes("Error processing ICE candidate")) { 
+        console.error('Error adding remote ICE candidate:', error);
+      } else {
+        console.log("Benign error adding remote ICE candidate:", error);
+      }
     }
   }, []);
   
-  const disconnect = useCallback(() => {
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-    if (dataChannelRef.current) {
-      dataChannelRef.current.close();
-      dataChannelRef.current = null;
-    }
-    iceCandidatesQueueRef.current = [];
-    updateConnectionState('disconnected', 'User initiated disconnect.');
-  }, [updateConnectionState]);
-
   useEffect(() => {
     return () => {
-      disconnect();
+      disconnectCleanup(); 
     };
-  }, [disconnect]);
+  }, [disconnectCleanup]);
 
   const sendGenericData = useCallback((type: string, payload: any) => {
     if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
@@ -248,11 +295,12 @@ export function useWebRTC({
         dataChannelRef.current.send(JSON.stringify({ type, payload }));
       } catch (error) {
         console.error(`Error sending ${type}:`, error);
+        updateConnectionState('failed', `Send error for ${type}`);
       }
     } else {
       console.warn(`Cannot send ${type}, data channel not open. State: ${dataChannelRef.current?.readyState}`);
     }
-  }, []);
+  }, [updateConnectionState]);
 
   const sendChatMessage = useCallback((text: string) => {
     sendGenericData('chat', { text, timestamp: new Date().toISOString() });
@@ -271,7 +319,6 @@ export function useWebRTC({
   }, [sendGenericData]);
   
   const sendFileChunk = useCallback((chunk: FileChunk) => {
-    // Assuming chunk.data is string (base64) for simplicity with JSON
     sendGenericData('file_chunk', chunk);
   }, [sendGenericData]);
 
@@ -280,7 +327,7 @@ export function useWebRTC({
     startGuestSessionAndCreateAnswer,
     acceptAnswer,
     addRemoteIceCandidate,
-    disconnect,
+    disconnect: internalDisconnectHandler, // Expose the memoized handler
     sendChatMessage,
     sendDataSnippet,
     sendFileMetadata,

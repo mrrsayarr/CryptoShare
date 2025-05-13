@@ -14,21 +14,20 @@ import type {
   ChatMessage, 
   DataSnippet, 
   FileMetadata, 
-  FileChunk,
-  TransferActivityFile
+  FileChunk
 } from '@/types/cryptoshare';
+import type { TransferActivityFile } from '@/types/cryptoshare'; // Ensure this is correctly imported
 import { useToast } from "@/hooks/use-toast";
 
 export default function CryptosharePage() {
   const [currentWebRTCState, setCurrentWebRTCState] = useState<PeerConnectionState>('disconnected');
-  const [localSdpOffer, setLocalSdpOffer] = useState<string | null>(null);
-  const [localSdpAnswer, setLocalSdpAnswer] = useState<string | null>(null);
-  const [localIceCandidates, setLocalIceCandidates] = useState<RTCIceCandidateInit[]>([]);
+  const [localSdpOfferForDisplay, setLocalSdpOfferForDisplay] = useState<string | null>(null);
+  const [localSdpAnswerForDisplay, setLocalSdpAnswerForDisplay] = useState<string | null>(null);
+  const [localIceCandidatesForDisplay, setLocalIceCandidatesForDisplay] = useState<RTCIceCandidateInit[]>([]);
   
   const [mounted, setMounted] = useState(false);
   const { toast } = useToast();
 
-  // For child components
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [dataSnippets, setDataSnippets] = useState<DataSnippet[]>([]);
   const [fileActivities, setFileActivities] = useState<TransferActivityFile[]>([]);
@@ -37,27 +36,31 @@ export default function CryptosharePage() {
 
   const handleConnectionStateChange = useCallback((newState: PeerConnectionState, details?: string) => {
     setCurrentWebRTCState(prevState => {
-      if (newState === 'failed') {
+      console.log(`CryptosharePage: WebRTC state changing from ${prevState} to ${newState}. Details: ${details || 'N/A'}`);
+      if (newState === 'failed' && prevState !== 'failed') { // Avoid redundant failed toasts
           toast({ title: "Connection Failed", description: details || "Could not establish P2P connection.", variant: "destructive"});
       }
-      // Check against prevState for disconnected toast logic
-      // Avoid toast if already disconnected or if transitioning from failed (failed toast already shown)
-      if (newState === 'disconnected' && prevState !== 'disconnected' && prevState !== 'failed') { 
+      // Only show "Disconnected" toast if it's a transition from 'connected' or an unexpected disconnect not already covered by 'failed'
+      if (newState === 'disconnected' && prevState === 'connected') { 
           toast({ title: "Disconnected", description: details || "P2P connection closed."});
-          // Reset SDP and ICE states for new connection attempt
-          setLocalSdpOffer(null);
-          setLocalSdpAnswer(null);
-          setLocalIceCandidates([]);
+      }
+      
+      // Reset SDP and ICE display states when disconnected, unless it's a failed state (failed handles its own UI)
+      if (newState === 'disconnected' && prevState !== 'failed') {
+          setLocalSdpOfferForDisplay(null);
+          setLocalSdpAnswerForDisplay(null);
+          setLocalIceCandidatesForDisplay([]);
       }
       return newState;
     });
-    if (details) console.log(`Connection state changed to: ${newState}`, details || '');
   }, [toast]);
 
   const handleRemotePeerDisconnected = useCallback(() => {
-    toast({ title: "Peer Disconnected", description: "The other peer has disconnected.", variant: "destructive" });
+    // This might be redundant if onConnectionStateChange already handles failed/disconnected toasts
+    // toast({ title: "Peer Disconnected", description: "The other peer has disconnected.", variant: "destructive" });
+    console.log("CryptosharePage: Peer disconnected callback triggered.");
     // webRTC.disconnect() will be called internally by useWebRTC hook, updating state via handleConnectionStateChange
-  }, [toast]);
+  }, [/*toast*/]);
 
   const handleMessageReceived = useCallback((message: { text: string; sender: 'peer'; timestamp: Date }) => {
     setChatMessages(prev => [...prev, { ...message, id: `msg-${Date.now()}` }]);
@@ -122,7 +125,7 @@ export default function CryptosharePage() {
           const newProgress = Math.round(((chunk.chunkNumber + 1) / chunk.totalChunks) * 100);
           if (chunk.isLast) {
             const fileBlobs = receivedFileChunks.current[chunk.fileId].map(buffer => new Blob([buffer]));
-            const fullFileBlob = new Blob(fileBlobs, {type: activity.name.endsWith('.txt') ? 'text/plain' : undefined});
+            const fullFileBlob = new Blob(fileBlobs, {type: activity.name.endsWith('.txt') ? 'text/plain' : undefined}); // Basic MIME type inference
             
             const url = URL.createObjectURL(fullFileBlob);
             const a = document.createElement('a');
@@ -146,14 +149,17 @@ export default function CryptosharePage() {
 
   const handleLocalSdpReady = useCallback((type: 'offer' | 'answer', sdp: string) => {
     if (type === 'offer') {
-      setLocalSdpOffer(sdp);
+      console.log("CryptosharePage: Local Offer SDP Ready");
+      setLocalSdpOfferForDisplay(sdp);
     } else {
-      setLocalSdpAnswer(sdp);
+      console.log("CryptosharePage: Local Answer SDP Ready");
+      setLocalSdpAnswerForDisplay(sdp);
     }
   }, []);
 
   const handleLocalIceCandidateReady = useCallback((candidate: RTCIceCandidateInit) => {
-    setLocalIceCandidates(prev => [...prev, candidate]);
+    console.log("CryptosharePage: Local ICE Candidate Ready");
+    setLocalIceCandidatesForDisplay(prev => [...prev, candidate]);
   }, []);
 
   const webRTC = useWebRTC({
@@ -183,34 +189,39 @@ export default function CryptosharePage() {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       if (rtcStateFromHook === 'connected' || rtcStateFromHook === 'connecting') {
+        console.log("CryptosharePage: Unloading, disconnecting WebRTC.");
         rtcDisconnect();
       }
     };
   }, [rtcStateFromHook, rtcDisconnect]);
 
   const handleStartInitiator = useCallback(() => {
-    setLocalSdpOffer(null); // Reset previous offer if any
-    setLocalSdpAnswer(null);
-    setLocalIceCandidates([]);
-    receivedFileChunks.current = {}; // Clear any partial file data
+    console.log("CryptosharePage: Starting Initiator Session.");
+    setLocalSdpOfferForDisplay(null); 
+    setLocalSdpAnswerForDisplay(null);
+    setLocalIceCandidatesForDisplay([]);
+    receivedFileChunks.current = {}; 
     webRTC.startInitiatorSession();
   }, [webRTC]);
 
   const handleProcessOfferAndCreateAnswer = useCallback((offerSdp: string) => {
-    setLocalSdpOffer(null); 
-    setLocalSdpAnswer(null);
-    setLocalIceCandidates([]);
-    receivedFileChunks.current = {}; // Clear any partial file data
+    console.log("CryptosharePage: Processing Offer and Creating Answer.");
+    setLocalSdpOfferForDisplay(null); 
+    setLocalSdpAnswerForDisplay(null);
+    setLocalIceCandidatesForDisplay([]);
+    receivedFileChunks.current = {};
     webRTC.startGuestSessionAndCreateAnswer(offerSdp);
   }, [webRTC]);
   
   const handleAcceptAnswer = useCallback((answerSdp: string) => {
+    console.log("CryptosharePage: Accepting Answer.");
     webRTC.acceptAnswer(answerSdp);
   }, [webRTC]);
 
   const handleAddRemoteIceCandidate = useCallback((candidateJson: string) => {
      try {
-        const candidate = JSON.parse(candidateJson) as RTCIceCandidateInit;
+        console.log("CryptosharePage: Adding Remote ICE Candidate.");
+        const candidate = JSON.parse(candidateJson) as RTCIceCandidateInit; // Basic validation
         webRTC.addRemoteIceCandidate(candidate);
      } catch (e) {
         toast({ title: "Invalid ICE Candidate", description: "The provided ICE candidate was not valid JSON.", variant: "destructive"});
@@ -219,12 +230,16 @@ export default function CryptosharePage() {
   }, [webRTC, toast]);
 
   const handleDisconnect = useCallback(() => {
-    webRTC.disconnect(); // This will trigger onConnectionStateChange to 'disconnected'
+    console.log("CryptosharePage: User initiated disconnect.");
+    webRTC.disconnect(); 
     setChatMessages([]);
     setDataSnippets([]);
     setFileActivities([]);
     receivedFileChunks.current = {};
-    // SDP and ICE states are reset by handleConnectionStateChange when newState is 'disconnected'
+    // SDP and ICE display states are reset by handleConnectionStateChange when newState is 'disconnected'
+    setLocalSdpOfferForDisplay(null);
+    setLocalSdpAnswerForDisplay(null);
+    setLocalIceCandidatesForDisplay([]);
   }, [webRTC]);
 
   const sendChatMessage = useCallback((text: string) => {
@@ -282,6 +297,7 @@ export default function CryptosharePage() {
         reader.onload = (e) => {
           if (e.target?.result) {
             const chunkData = e.target.result as ArrayBuffer;
+            // Convert ArrayBuffer to Base64 string for sending via JSON
             const base64ChunkData = btoa(
                 new Uint8Array(chunkData).reduce((data, byte) => data + String.fromCharCode(byte), '')
             );
@@ -290,7 +306,7 @@ export default function CryptosharePage() {
               fileId: activity.id,
               chunkNumber,
               totalChunks,
-              data: base64ChunkData,
+              data: base64ChunkData, // Send as base64 string
               isLast: chunkNumber === totalChunks - 1,
             });
             
@@ -299,8 +315,9 @@ export default function CryptosharePage() {
             
             chunkNumber++;
             if (chunkNumber < totalChunks) {
-              readNextChunk();
-            } else if (chunkNumber === totalChunks) { // Corrected condition
+              // Add a small delay to avoid overwhelming the data channel, especially for large files
+              setTimeout(readNextChunk, 10); // Adjust delay as needed
+            } else if (chunkNumber === totalChunks) {
                 toast({title: "File Sent", description: `${activity.name} sent successfully.`});
             }
           }
@@ -335,9 +352,9 @@ export default function CryptosharePage() {
             onAcceptAnswer={handleAcceptAnswer}
             onAddRemoteIceCandidate={handleAddRemoteIceCandidate}
             onDisconnect={handleDisconnect}
-            localSdpOffer={localSdpOffer}
-            localSdpAnswer={localSdpAnswer}
-            localIceCandidates={localIceCandidates}
+            localSdpOffer={localSdpOfferForDisplay}
+            localSdpAnswer={localSdpAnswerForDisplay}
+            localIceCandidates={localIceCandidatesForDisplay}
           />
         </CardContent>
       </Card>
