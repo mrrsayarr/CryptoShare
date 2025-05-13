@@ -1,11 +1,8 @@
 
-export type PeerConnectionState = 'disconnected' | 'connecting' | 'connected' | 'failed' | 'closed';
+export type PeerConnectionState = 'disconnected' | 'connecting' | 'connected' | 'failed' | 'closed' | 'offer_generated' | 'answer_generated' | 'awaiting_answer' | 'awaiting_offer';
 
-export interface SignalingMessage {
-  senderId: string;
-  type: 'offer' | 'answer' | 'candidate' | 'ready' | 'disconnect';
-  payload: RTCSessionDescriptionInit | RTCIceCandidateInit |  Record<string, unknown> | null;
-}
+// SignalingMessage is no longer needed for Firebase-based signaling.
+// Manual exchange will primarily deal with SDP strings and ICE candidate objects.
 
 export interface FileMetadata {
   id: string;
@@ -36,7 +33,7 @@ export interface ChatMessage {
 }
 
 export interface DataSnippet {
-    id: string;
+    id:string;
     content: string;
     timestamp: Date;
     type: 'sent' | 'received';

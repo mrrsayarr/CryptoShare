@@ -2,12 +2,10 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { database } from '@/lib/firebase';
-import { ref, onValue, set, push, remove, off, Unsubscribe } from 'firebase/database';
-import type { PeerConnectionState, SignalingMessage, FileMetadata, FileChunk, FileApproveReject } from '@/types/cryptoshare';
+import type { PeerConnectionState, FileMetadata, FileChunk, FileApproveReject } from '@/types/cryptoshare';
 
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
-const DATA_CHANNEL_LABEL = 'cryptoshare-channel';
+const DATA_CHANNEL_LABEL = 'cryptoshare-data-channel';
 
 interface WebRTCHookProps {
   onMessageReceived?: (message: { text: string; sender: 'peer'; timestamp: Date }) => void;
@@ -16,8 +14,10 @@ interface WebRTCHookProps {
   onFileApproved?: (fileId: string) => void;
   onFileRejected?: (fileId: string) => void;
   onFileChunkReceived?: (chunk: FileChunk) => void;
-  onConnectionStateChange?: (state: PeerConnectionState) => void;
+  onConnectionStateChange?: (state: PeerConnectionState, details?: string) => void;
   onRemotePeerDisconnected?: () => void;
+  onLocalSdpReady?: (type: 'offer' | 'answer', sdp: string) => void;
+  onLocalIceCandidateReady?: (candidate: RTCIceCandidateInit) => void;
 }
 
 export function useWebRTC({
@@ -29,39 +29,18 @@ export function useWebRTC({
   onFileChunkReceived,
   onConnectionStateChange,
   onRemotePeerDisconnected,
+  onLocalSdpReady,
+  onLocalIceCandidateReady,
 }: WebRTCHookProps) {
-  const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
-  const [dataChannel, setDataChannel] = useState<RTCDataChannel | null>(null);
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const [connectionState, setConnectionState] = useState<PeerConnectionState>('disconnected');
-  const localPeerIdRef = useRef<string | null>(null);
-  const remotePeerIdRef = useRef<string | null>(null);
-  const sessionKeyRef = useRef<string | null>(null);
-  const signalingListenersRef = useRef<Unsubscribe[]>([]);
-  const isPoliteRef = useRef(false); // For perfect negotiation handling
-  const makingOfferRef = useRef(false);
-  const ignoreOfferRef = useRef(false);
+  const iceCandidatesQueueRef = useRef<RTCIceCandidate[]>([]); // Queue candidates received before remote description is set
 
-  const updateConnectionState = useCallback((newState: PeerConnectionState) => {
+  const updateConnectionState = useCallback((newState: PeerConnectionState, details?: string) => {
     setConnectionState(newState);
-    onConnectionStateChange?.(newState);
+    onConnectionStateChange?.(newState, details);
   }, [onConnectionStateChange]);
-
-  const getSignalingPath = useCallback(() => {
-    if (!sessionKeyRef.current) return null;
-    return `cryptoshare_sessions/${sessionKeyRef.current}/messages`;
-  }, []);
-
-  const sendSignalingMessage = useCallback(async (message: Omit<SignalingMessage, 'senderId'>) => {
-    const signalingPath = getSignalingPath();
-    if (!signalingPath || !localPeerIdRef.current) return;
-    const fullMessage: SignalingMessage = { ...message, senderId: localPeerIdRef.current };
-    try {
-      await push(ref(database, signalingPath), fullMessage);
-    } catch (error) {
-      console.error('Error sending signaling message:', error);
-      updateConnectionState('failed');
-    }
-  }, [getSignalingPath, updateConnectionState]);
 
   const setupDataChannelEvents = useCallback((dc: RTCDataChannel) => {
     dc.onopen = () => {
@@ -70,11 +49,11 @@ export function useWebRTC({
     };
     dc.onclose = () => {
       console.log('Data channel closed');
-      // updateConnectionState('disconnected'); // Handled by peer connection state
+      // updateConnectionState('disconnected'); // Usually handled by peer connection state
     };
     dc.onerror = (error) => {
       console.error('Data channel error:', error);
-      updateConnectionState('failed');
+      updateConnectionState('failed', 'Data channel error');
     };
     dc.onmessage = (event) => {
       try {
@@ -90,35 +69,35 @@ export function useWebRTC({
         } else if (received.type === 'file_reject') {
           onFileRejected?.(received.payload.fileId);
         } else if (received.type === 'file_chunk') {
-          // For ArrayBuffer, it would need to be handled differently, not via JSON.parse
-          // This part assumes stringified chunk for simplicity, real implementation would send ArrayBuffer
            onFileChunkReceived?.(received.payload as FileChunk);
-        } else if (received.type === 'file_chunk_binary') {
-           // This is where binary chunks would be handled
-           // The event.data would be ArrayBuffer. We need to reconstruct it.
-           // This requires a more complex onmessage handling (e.g. if event.data is not string)
         }
       } catch (error) {
         console.warn('Received non-JSON message or unknown message type:', event.data, error);
       }
     };
+    dataChannelRef.current = dc;
   }, [onMessageReceived, onDataSnippetReceived, onFileMetadataReceived, onFileApproved, onFileRejected, onFileChunkReceived, updateConnectionState]);
 
   const createPeerConnection = useCallback(() => {
+    if (peerConnectionRef.current) {
+        console.warn("PeerConnection already exists. Closing existing one.");
+        peerConnectionRef.current.close();
+    }
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    peerConnectionRef.current = pc;
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        sendSignalingMessage({ type: 'candidate', payload: event.candidate.toJSON() });
+        onLocalIceCandidateReady?.(event.candidate.toJSON());
       }
     };
 
     pc.oniceconnectionstatechange = () => {
       console.log('ICE connection state change:', pc.iceConnectionState);
-      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'closed' || pc.iceConnectionState === 'failed') {
+      if (['disconnected', 'closed', 'failed'].includes(pc.iceConnectionState)) {
         if (connectionState !== 'disconnected' && connectionState !== 'failed') {
-           updateConnectionState('disconnected');
-           onRemotePeerDisconnected?.();
+            updateConnectionState('disconnected', `ICE state: ${pc.iceConnectionState}`);
+            onRemotePeerDisconnected?.();
         }
       }
     };
@@ -127,224 +106,136 @@ export function useWebRTC({
       console.log('Connection state change:', pc.connectionState);
       switch (pc.connectionState) {
         case 'connected':
-          if (!dataChannel) updateConnectionState('connected'); // If DC already open, it sets it
+          if (!dataChannelRef.current || dataChannelRef.current.readyState !== 'open') {
+             // Wait for data channel to be open or rely on its onopen
+          } else {
+             updateConnectionState('connected');
+          }
           break;
         case 'disconnected':
         case 'closed':
            if (connectionState !== 'disconnected' && connectionState !== 'failed') {
-            updateConnectionState('disconnected');
+            updateConnectionState('disconnected', `Connection state: ${pc.connectionState}`);
             onRemotePeerDisconnected?.();
           }
           break;
         case 'failed':
-          updateConnectionState('failed');
+          updateConnectionState('failed', `Connection state: ${pc.connectionState}`);
           onRemotePeerDisconnected?.();
           break;
         case 'new':
         case 'connecting':
-          updateConnectionState('connecting');
+          if (connectionState !== 'connecting') updateConnectionState('connecting');
           break;
-      }
-    };
-
-    pc.onnegotiationneeded = async () => {
-      try {
-        if (makingOfferRef.current || pc.signalingState !== 'stable') return;
-        makingOfferRef.current = true;
-        await pc.setLocalDescription(await pc.createOffer());
-        sendSignalingMessage({ type: 'offer', payload: pc.localDescription?.toJSON() });
-      } catch (err) {
-        console.error('Negotiation needed error:', err);
-        updateConnectionState('failed');
-      } finally {
-        makingOfferRef.current = false;
       }
     };
     
     pc.ondatachannel = (event) => {
-      const dc = event.channel;
-      console.log('Remote data channel received:', dc.label);
-      setDataChannel(dc);
-      setupDataChannelEvents(dc);
+      console.log('Remote data channel received:', event.channel.label);
+      setupDataChannelEvents(event.channel);
     };
-
-    setPeerConnection(pc);
+    
     return pc;
-  }, [sendSignalingMessage, setupDataChannelEvents, updateConnectionState, onRemotePeerDisconnected, dataChannel, connectionState]);
+  }, [onLocalIceCandidateReady, updateConnectionState, onRemotePeerDisconnected, setupDataChannelEvents, connectionState]);
 
-
-  const handleSignalingMessage = useCallback(async (message: SignalingMessage) => {
-    if (!peerConnection || message.senderId === localPeerIdRef.current) return;
-
-    remotePeerIdRef.current = message.senderId;
-
-    if (message.type === 'offer') {
-      const offerCollision = (makingOfferRef.current || peerConnection.signalingState !== 'stable');
-      ignoreOfferRef.current = !isPoliteRef.current && offerCollision;
-      if (ignoreOfferRef.current) {
-        console.log('Ignoring offer due to collision and role.');
-        return;
-      }
-      
-      try {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(message.payload as RTCSessionDescriptionInit));
-        await peerConnection.setLocalDescription(await peerConnection.createAnswer());
-        sendSignalingMessage({ type: 'answer', payload: peerConnection.localDescription?.toJSON() });
-      } catch (err) {
-        console.error('Error handling offer:', err);
-        updateConnectionState('failed');
-      }
-    } else if (message.type === 'answer') {
-       try {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(message.payload as RTCSessionDescriptionInit));
-      } catch (err) {
-        console.error('Error handling answer:', err);
-        updateConnectionState('failed');
-      }
-    } else if (message.type === 'candidate') {
-      try {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(message.payload as RTCIceCandidateInit));
-      } catch (err) {
-        if (!ignoreOfferRef.current) console.error('Error adding ICE candidate:', err);
-      }
-    } else if (message.type === 'ready' && isPoliteRef.current) {
-        // polite peer creates the data channel
-        const dc = peerConnection.createDataChannel(DATA_CHANNEL_LABEL);
-        setDataChannel(dc);
-        setupDataChannelEvents(dc);
-    } else if (message.type === 'disconnect') {
-        console.log('Remote peer signaled disconnect.');
-        updateConnectionState('disconnected');
-        onRemotePeerDisconnected?.();
-        disconnect();
-    }
-  }, [peerConnection, sendSignalingMessage, setupDataChannelEvents, updateConnectionState, onRemotePeerDisconnected]);
-
-  const connect = useCallback(async (sKey: string, currentPeerId: string) => {
-    if (connectionState === 'connected' || connectionState === 'connecting') {
-        console.warn("Already connected or connecting.");
-        return;
-    }
-    updateConnectionState('connecting');
-    localPeerIdRef.current = currentPeerId;
-    sessionKeyRef.current = sKey;
-
-    const signalingPath = getSignalingPath();
-    if (!signalingPath) {
-      updateConnectionState('failed');
+  const startInitiatorSession = useCallback(async () => {
+    if (connectionState !== 'disconnected') {
+      console.warn("Cannot start initiator session, already connected or connecting.");
       return;
     }
-    
-    // Determine role (polite/impolite) based on peerId comparison for simplicity
-    // This ensures one peer consistently takes the 'polite' role in negotiation.
-    // For this, we need to know other peers or have a mechanism.
-    // For a 2-peer system, one can be hardcoded polite, or first one in is impolite.
-    // Let's use Firebase to determine who is first.
-    const sessionRef = ref(database, `cryptoshare_sessions/${sKey}/peers`);
-    const peerNodeRef = ref(database, `cryptoshare_sessions/${sKey}/peers/${currentPeerId}`);
+    updateConnectionState('connecting', 'Initiator starting...');
+    const pc = createPeerConnection();
+    const dc = pc.createDataChannel(DATA_CHANNEL_LABEL);
+    setupDataChannelEvents(dc);
+
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      updateConnectionState('offer_generated', 'Offer SDP generated.');
+      onLocalSdpReady?.('offer', offer.sdp || '');
+    } catch (error) {
+      console.error('Error creating offer:', error);
+      updateConnectionState('failed', 'Error creating offer.');
+    }
+  }, [createPeerConnection, setupDataChannelEvents, updateConnectionState, onLocalSdpReady, connectionState]);
+
+  const startGuestSessionAndCreateAnswer = useCallback(async (offerSdp: string) => {
+     if (connectionState !== 'disconnected' && connectionState !== 'awaiting_offer') {
+      console.warn("Cannot start guest session, state is not disconnected or awaiting_offer.");
+      // return; // Allow if awaiting_offer
+    }
+    updateConnectionState('connecting', 'Guest processing offer...');
+    const pc = createPeerConnection();
     
     try {
-        await set(peerNodeRef, { joinedAt: Date.now() }); // Mark presence
-
-        const unsubscribePeers = onValue(sessionRef, (snapshot) => {
-            const peers = snapshot.val();
-            if (peers) {
-                const peerIds = Object.keys(peers);
-                if (peerIds.length === 1 && peerIds[0] === localPeerIdRef.current) {
-                    isPoliteRef.current = false; // First one is impolite
-                    console.log("Role: Impolite (Initiator)");
-                } else if (peerIds.length > 1) {
-                    const otherPeerId = peerIds.find(id => id !== localPeerIdRef.current);
-                    if(otherPeerId) remotePeerIdRef.current = otherPeerId;
-                    // Simple heuristic: if my ID is lexicographically smaller, I'm impolite.
-                    // This is just one way to break ties for the 'polite' role.
-                    // A more robust system might involve a "master" peer or server-assigned roles.
-                    // For now, if there's another peer, this one can be polite.
-                    const localIsSmaller = peerIds.sort()[0] === localPeerIdRef.current;
-                    isPoliteRef.current = !localIsSmaller;
-                    console.log(`Role: ${isPoliteRef.current ? "Polite" : "Impolite"}`);
-
-                    if (!isPoliteRef.current && !peerConnection) { // Impolite peer initiates
-                        const pc = createPeerConnection();
-                        const dc = pc.createDataChannel(DATA_CHANNEL_LABEL);
-                        setDataChannel(dc);
-                        setupDataChannelEvents(dc);
-                         // Negotiation will be triggered by onnegotiationneeded
-                    } else if (isPoliteRef.current && !peerConnection) {
-                        createPeerConnection(); // Polite peer waits for offer
-                    }
-                }
-                 if (peerIds.length === 2 && !isPoliteRef.current) { // if impolite and other peer joined
-                    sendSignalingMessage({type: 'ready', payload: null});
-                }
-            }
-        }, { onlyOnce: false }); // Listen for changes in peers
-        signalingListenersRef.current.push(unsubscribePeers);
-
-
+      await pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
+      // Process any queued ICE candidates
+      while(iceCandidatesQueueRef.current.length > 0) {
+        const candidate = iceCandidatesQueueRef.current.shift();
+        if (candidate) await pc.addIceCandidate(candidate);
+      }
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      updateConnectionState('answer_generated', 'Answer SDP generated.');
+      onLocalSdpReady?.('answer', answer.sdp || '');
     } catch (error) {
-        console.error("Firebase presence error:", error);
-        updateConnectionState('failed');
+      console.error('Error creating answer or setting remote description:', error);
+      updateConnectionState('failed', 'Error processing offer or creating answer.');
+    }
+  }, [createPeerConnection, updateConnectionState, onLocalSdpReady, connectionState]);
+
+  const acceptAnswer = useCallback(async (answerSdp: string) => {
+    if (!peerConnectionRef.current || connectionState !== 'offer_generated') {
+        console.error("Cannot accept answer: No peer connection or not in 'offer_generated' state.", peerConnectionRef.current, connectionState);
+        updateConnectionState('failed', 'Error accepting answer: Invalid state.');
         return;
     }
-
-
-    const messagesRef = ref(database, signalingPath);
-    const unsubscribeMessages = onValue(messagesRef, (snapshot) => {
-      snapshot.forEach((childSnapshot) => {
-        const message = childSnapshot.val() as SignalingMessage;
-        if (message.senderId !== localPeerIdRef.current) {
-          handleSignalingMessage(message);
-        }
-      });
-    });
-    signalingListenersRef.current.push(unsubscribeMessages);
-
-    if (!peerConnection) { // If not already created by peer logic
-        createPeerConnection(); // General case if peer logic didn't run
+    updateConnectionState('connecting', 'Processing answer...');
+    try {
+      await peerConnectionRef.current.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+       // Process any queued ICE candidates
+      while(iceCandidatesQueueRef.current.length > 0) {
+        const candidate = iceCandidatesQueueRef.current.shift();
+        if (candidate) await peerConnectionRef.current.addIceCandidate(candidate);
+      }
+      // Connection should establish now, state will be updated by onconnectionstatechange or ondatachannel.onopen
+    } catch (error) {
+      console.error('Error setting remote description (answer):', error);
+      updateConnectionState('failed', 'Error processing answer.');
     }
+  }, [updateConnectionState, connectionState]);
 
-
-  }, [getSignalingPath, handleSignalingMessage, createPeerConnection, updateConnectionState, setupDataChannelEvents, peerConnection, connectionState]);
-
-  const disconnect = useCallback(async () => {
-    updateConnectionState('disconnected');
-    if (peerConnection) {
-      peerConnection.close();
-      setPeerConnection(null);
+  const addRemoteIceCandidate = useCallback(async (candidateInit: RTCIceCandidateInit) => {
+    if (!peerConnectionRef.current) {
+      console.warn('Peer connection not ready, queuing ICE candidate.');
+      iceCandidatesQueueRef.current.push(new RTCIceCandidate(candidateInit));
+      return;
     }
-    if (dataChannel) {
-      dataChannel.close();
-      setDataChannel(null);
+    if (!peerConnectionRef.current.remoteDescription) {
+        console.warn('Remote description not set, queuing ICE candidate.');
+        iceCandidatesQueueRef.current.push(new RTCIceCandidate(candidateInit));
+        return;
     }
-    
-    signalingListenersRef.current.forEach(unsubscribe => unsubscribe());
-    signalingListenersRef.current = [];
-
-    const signalingPath = getSignalingPath();
-    if (signalingPath) {
-      // Clean up own messages or entire session if last one.
-      // For simplicity, let's just remove own presence.
-      // A more robust cleanup might be needed for /messages.
-      // For now, we won't remove /messages to allow late joiners to catch up (though this example isn't built for that robustly)
-       off(ref(database, signalingPath)); // Detach all listeners from messages path
+    try {
+      await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidateInit));
+    } catch (error) {
+      console.error('Error adding remote ICE candidate:', error);
     }
-    if (sessionKeyRef.current && localPeerIdRef.current) {
-        const peerNodeRef = ref(database, `cryptoshare_sessions/${sessionKeyRef.current}/peers/${localPeerIdRef.current}`);
-        await remove(peerNodeRef); // Remove self from peers list
-        sendSignalingMessage({ type: 'disconnect', payload: null });
+  }, []);
+  
+  const disconnect = useCallback(() => {
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
     }
+    if (dataChannelRef.current) {
+      dataChannelRef.current.close();
+      dataChannelRef.current = null;
+    }
+    iceCandidatesQueueRef.current = [];
+    updateConnectionState('disconnected', 'User initiated disconnect.');
+  }, [updateConnectionState]);
 
-    localPeerIdRef.current = null;
-    remotePeerIdRef.current = null;
-    sessionKeyRef.current = null;
-    isPoliteRef.current = false;
-    makingOfferRef.current = false;
-    ignoreOfferRef.current = false;
-
-  }, [peerConnection, dataChannel, getSignalingPath, updateConnectionState, sendSignalingMessage]);
-
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       disconnect();
@@ -352,16 +243,16 @@ export function useWebRTC({
   }, [disconnect]);
 
   const sendGenericData = useCallback((type: string, payload: any) => {
-    if (dataChannel && dataChannel.readyState === 'open') {
+    if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
       try {
-        dataChannel.send(JSON.stringify({ type, payload }));
+        dataChannelRef.current.send(JSON.stringify({ type, payload }));
       } catch (error) {
         console.error(`Error sending ${type}:`, error);
       }
     } else {
-      console.warn(`Cannot send ${type}, data channel not open. State: ${dataChannel?.readyState}`);
+      console.warn(`Cannot send ${type}, data channel not open. State: ${dataChannelRef.current?.readyState}`);
     }
-  }, [dataChannel]);
+  }, []);
 
   const sendChatMessage = useCallback((text: string) => {
     sendGenericData('chat', { text, timestamp: new Date().toISOString() });
@@ -380,33 +271,15 @@ export function useWebRTC({
   }, [sendGenericData]);
   
   const sendFileChunk = useCallback((chunk: FileChunk) => {
-    if (dataChannel && dataChannel.readyState === 'open') {
-      // For actual binary data, send ArrayBuffer directly.
-      // This example simplifies by assuming chunk.data is stringifiable,
-      // but real file chunks are ArrayBuffers.
-      if (chunk.data instanceof ArrayBuffer) {
-         // RTCDataChannel can send ArrayBuffer directly
-         // Need to ensure receiver can handle ArrayBuffer (e.g. by checking event.data type)
-         // For this example, let's assume it's stringified for now to keep onmessage simple
-         // A better way: send a header message like { type: 'file_chunk_binary_header', ...}, then send raw ArrayBuffer
-         // Or use a specific data channel for binary.
-         console.warn("Binary file chunk sending not fully implemented in this simplified version's onmessage handler.");
-         // dataChannel.send(JSON.stringify({ type: 'file_chunk_binary', payload: chunk })); // This is not ideal for binary
-         // A proper implementation would send the ArrayBuffer directly, possibly after a metadata message.
-         // For now, we'll rely on the text-based chunk for simplicity of the onmessage handler.
-         dataChannel.send(JSON.stringify({ type: 'file_chunk', payload: chunk }));
-
-      } else {
-         dataChannel.send(JSON.stringify({ type: 'file_chunk', payload: chunk }));
-      }
-    } else {
-      console.warn('Cannot send file chunk, data channel not open.');
-    }
-  }, [dataChannel]);
-
+    // Assuming chunk.data is string (base64) for simplicity with JSON
+    sendGenericData('file_chunk', chunk);
+  }, [sendGenericData]);
 
   return {
-    connect,
+    startInitiatorSession,
+    startGuestSessionAndCreateAnswer,
+    acceptAnswer,
+    addRemoteIceCandidate,
     disconnect,
     sendChatMessage,
     sendDataSnippet,
@@ -414,6 +287,5 @@ export function useWebRTC({
     sendFileApproval,
     sendFileChunk,
     connectionState,
-    localPeerId: localPeerIdRef.current,
   };
 }

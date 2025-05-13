@@ -16,21 +16,50 @@ export default function AboutPage() {
           <section>
             <h2 className="text-2xl font-semibold mb-3 text-primary">How to Use Cryptoshare (English)</h2>
             <p className="mb-2">
-              Cryptoshare is a peer-to-peer (P2P) application designed for secure transfer of files, data, and messages. It uses WebRTC to establish a direct connection between users and Firebase Realtime Database for signaling (to help peers find each other). All transfers are end-to-end encrypted through the WebRTC data channel.
+              Cryptoshare is a peer-to-peer (P2P) application designed for secure transfer of files, data, and messages. It uses WebRTC to establish a direct connection between users. Connection details (Offers, Answers, ICE Candidates) are exchanged manually by users copying and pasting text between their browsers. All transfers are end-to-end encrypted through the WebRTC data channel.
             </p>
 
-            <h3 className="text-xl font-semibold mt-4 mb-2">1. Establishing a Secure Connection</h3>
+            <h3 className="text-xl font-semibold mt-4 mb-2">1. Establishing a Secure Connection (Manual Signaling)</h3>
             <p className="mb-1">
-              To start sharing, you and your peer need to establish a secure P2P connection:
+              To start sharing, you and your peer need to establish a secure P2P connection by manually exchanging connection information:
             </p>
             <ul className="list-disc pl-6 space-y-1 mb-2">
-              <li><strong>Enter or Generate a Session Key</strong>: On the main page, one user can either type a custom session key or click "Generate Secure Key" to create a strong, random key.</li>
-              <li><strong>Share the Key Securely</strong>: Share this exact session key with your peer through a secure out-of-band channel (e.g., a secure messaging app, verbally). Both users must use the IDENTICAL key.</li>
-              <li><strong>Both Connect</strong>: Both users must enter the <em>same</em> session key into the "Session Key" field and click "Connect". The application will then use Firebase to help your browsers find each other and establish a direct WebRTC connection.</li>
-              <li><strong>Check Key Strength (Optional)</strong>: If you're using a custom key, it's recommended to use the "Check Key Strength / Get Suggestions" button. This uses an AI model to analyze your key and suggest improvements.</li>
+              <li><strong>Choose Roles</strong>: One user must choose "Initiate New Session" and the other "Join Existing Session" on the main page.</li>
+              <li><strong>Initiator - Step 1: Generate & Share Offer</strong>:
+                <ul className="list-circle pl-6 space-y-1 mt-1">
+                    <li>The Initiator clicks "Initiate New Session".</li>
+                    <li>The application will generate an "Offer SDP". This text block will appear in a textarea.</li>
+                    <li>The Initiator must copy this entire Offer SDP text and securely send it to the Guest (e.g., via a secure messaging app, email).</li>
+                </ul>
+              </li>
+              <li><strong>Guest - Step 1: Paste Offer & Generate Answer</strong>:
+                <ul className="list-circle pl-6 space-y-1 mt-1">
+                    <li>The Guest clicks "Join Existing Session".</li>
+                    <li>The Guest pastes the Initiator's Offer SDP into the designated textarea and clicks "Process Offer & Generate Answer".</li>
+                    <li>The application will generate an "Answer SDP". This text block will appear.</li>
+                    <li>The Guest must copy this entire Answer SDP text and securely send it back to the Initiator.</li>
+                </ul>
+              </li>
+              <li><strong>Initiator - Step 2: Paste Answer</strong>:
+                <ul className="list-circle pl-6 space-y-1 mt-1">
+                    <li>The Initiator pastes the Guest's Answer SDP into the designated textarea and clicks "Process Answer & Start ICE".</li>
+                </ul>
+              </li>
+              <li><strong>Both Users - Step 3: Exchange ICE Candidates</strong>:
+                <ul className="list-circle pl-6 space-y-1 mt-1">
+                    <li>After processing the Answer (for Initiator) or generating the Answer (for Guest), both users' applications will start generating "ICE Candidates". These are small pieces of text information that help browsers find each other over the internet.</li>
+                    <li>ICE candidates may appear incrementally in a textarea labeled "Your ICE Candidates".</li>
+                    <li>Each user must copy ALL lines of their ICE candidates and send them to the other user.</li>
+                    <li>Each user must paste the ICE candidates received from their peer into the textarea labeled "Peer's ICE Candidates" and click "Add Peer's Candidates". This step might need to be repeated if new candidates are generated.</li>
+                </ul>
+              </li>
+               <li><strong>Connection</strong>: If all information is exchanged correctly, the connection status will change to "Connected". This may take a few moments.</li>
             </ul>
             <p>
               Once connected, you'll see the status change to &quot;Connected&quot; and tabs for File Transfer, Data Transfer, and Messaging will become available. The connection is directly between your and your peer&apos;s browser.
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+                <strong>Note on Key Strength Tool:</strong> The "Check Key Strength / Get Suggestions" button on the connection card is for a separate "Password Tool" (accessible via navbar) and is not directly part of this manual WebRTC connection process. The "Generate Secure Key" button is also a remnant of a previous connection method and is not used in the current manual flow.
             </p>
 
             <h3 className="text-xl font-semibold mt-4 mb-2">2. Using the Features</h3>
@@ -73,12 +102,12 @@ export default function AboutPage() {
 
             <h3 className="text-xl font-semibold mt-4 mb-2">4. Security</h3>
             <p>
-              All data transfers (files, data snippets, messages) within Cryptoshare are end-to-end encrypted using the inherent security of WebRTC (DTLS). The session key is used to uniquely identify your P2P session for signaling purposes via Firebase, allowing peers to find each other. Firebase itself does not see the content of your transferred data.
+              All data transfers (files, data snippets, messages) within Cryptoshare are end-to-end encrypted using the inherent security of WebRTC (DTLS). The manual exchange of SDP and ICE candidates is for connection setup; the actual data does not pass through any central server. The security of the initial SDP/ICE exchange depends on how users share this information.
             </p>
             
             <h3 className="text-xl font-semibold mt-4 mb-2">5. Disconnecting</h3>
             <p>
-              To end the session, either user can click the &quot;Disconnect&quot; button. This will close the P2P connection. Refreshing the page or closing the browser tab will also terminate the connection.
+              To end the session, either user can click the &quot;Disconnect&quot; or "Reset Connection Process" button. This will close the P2P connection. Refreshing the page or closing the browser tab will also terminate the connection.
             </p>
           </section>
 
@@ -87,21 +116,50 @@ export default function AboutPage() {
           <section>
             <h2 className="text-2xl font-semibold mb-3 text-primary">Cryptoshare Nasıl Kullanılır? (Türkçe)</h2>
             <p className="mb-2">
-             Cryptoshare, dosyaların, verilerin ve mesajların güvenli bir şekilde aktarılması için tasarlanmış bir eşler arası (P2P) uygulamasıdır. Kullanıcılar arasında doğrudan bağlantı kurmak için WebRTC teknolojisini ve eşlerin birbirini bulmasına yardımcı olmak için Firebase Gerçek Zamanlı Veritabanı'nı sinyalizasyon amacıyla kullanır. Tüm aktarımlar WebRTC veri kanalı aracılığıyla uçtan uca şifrelenir.
+             Cryptoshare, dosyaların, verilerin ve mesajların güvenli bir şekilde aktarılması için tasarlanmış bir eşler arası (P2P) uygulamasıdır. Kullanıcılar arasında doğrudan bağlantı kurmak için WebRTC teknolojisini kullanır. Bağlantı detayları (Teklifler, Yanıtlar, ICE Adayları) kullanıcılar tarafından tarayıcıları arasında metin kopyalayıp yapıştırılarak manuel olarak değiş tokuş edilir. Tüm aktarımlar WebRTC veri kanalı aracılığıyla uçtan uca şifrelenir.
             </p>
 
-            <h3 className="text-xl font-semibold mt-4 mb-2">1. Güvenli Bağlantı Kurma</h3>
+            <h3 className="text-xl font-semibold mt-4 mb-2">1. Güvenli Bağlantı Kurma (Manuel Sinyalleşme)</h3>
             <p className="mb-1">
-              Paylaşıma başlamak için sizin ve eşinizin güvenli bir P2P bağlantısı kurması gerekir:
+              Paylaşıma başlamak için sizin ve eşinizin bağlantı bilgilerini manuel olarak değiş tokuş ederek güvenli bir P2P bağlantısı kurması gerekir:
             </p>
             <ul className="list-disc pl-6 space-y-1 mb-2">
-              <li><strong>Oturum Anahtarı Girin veya Oluşturun</strong>: Ana sayfada, bir kullanıcı özel bir oturum anahtarı yazabilir veya güçlü, rastgele bir anahtar oluşturmak için "Güvenli Anahtar Oluştur" düğmesine tıklayabilir.</li>
-              <li><strong>Anahtarı Güvenli Bir Şekilde Paylaşın</strong>: Bu oturum anahtarını eşinizle güvenli bir bant dışı kanal aracılığıyla (örneğin, güvenli bir mesajlaşma uygulaması, sözlü olarak) paylaşın. Her iki kullanıcı da AYNI anahtarı kullanmalıdır.</li>
-              <li><strong>Her İki Kullanıcı da Bağlanır</strong>: Her iki kullanıcı da <em>aynı</em> oturum anahtarını "Oturum Anahtarı" alanına girmeli ve "Bağlan" düğmesine tıklamalıdır. Uygulama daha sonra Firebase'i kullanarak tarayıcılarınızın birbirini bulmasına ve doğrudan bir WebRTC bağlantısı kurmasına yardımcı olacaktır.</li>
-              <li><strong>Anahtar Gücünü Kontrol Edin (İsteğe Bağlı)</strong>: Özel bir anahtar kullanıyorsanız, "Anahtar Gücünü Kontrol Et / Öneri Al" düğmesini kullanmanız önerilir. Bu, anahtarınızı analiz etmek ve iyileştirmeler önermek için bir yapay zeka modeli kullanır.</li>
+              <li><strong>Rolleri Seçin</strong>: Bir kullanıcı ana sayfada "Yeni Oturum Başlat"ı, diğeri ise "Mevcut Oturuma Katıl"ı seçmelidir.</li>
+              <li><strong>Başlatıcı - Adım 1: Teklif Oluştur ve Paylaş</strong>:
+                <ul className="list-circle pl-6 space-y-1 mt-1">
+                    <li>Başlatıcı, "Yeni Oturum Başlat" düğmesine tıklar.</li>
+                    <li>Uygulama bir "Teklif SDP'si" oluşturacaktır. Bu metin bloğu bir metin alanında görünecektir.</li>
+                    <li>Başlatıcı, bu Teklif SDP metninin tamamını kopyalamalı ve güvenli bir şekilde Misafir'e göndermelidir (örneğin, güvenli bir mesajlaşma uygulaması, e-posta yoluyla).</li>
+                </ul>
+              </li>
+              <li><strong>Misafir - Adım 1: Teklifi Yapıştır ve Yanıt Oluştur</strong>:
+                <ul className="list-circle pl-6 space-y-1 mt-1">
+                    <li>Misafir, "Mevcut Oturuma Katıl" düğmesine tıklar.</li>
+                    <li>Misafir, Başlatıcı'nın Teklif SDP'sini ilgili metin alanına yapıştırır ve "Teklifi İşle ve Yanıt Oluştur" düğmesine tıklar.</li>
+                    <li>Uygulama bir "Yanıt SDP'si" oluşturacaktır. Bu metin bloğu görünecektir.</li>
+                    <li>Misafir, bu Yanıt SDP metninin tamamını kopyalamalı ve güvenli bir şekilde Başlatıcı'ya geri göndermelidir.</li>
+                </ul>
+              </li>
+              <li><strong>Başlatıcı - Adım 2: Yanıtı Yapıştır</strong>:
+                <ul className="list-circle pl-6 space-y-1 mt-1">
+                    <li>Başlatıcı, Misafir'in Yanıt SDP'sini ilgili metin alanına yapıştırır ve "Yanıtı İşle ve ICE'yi Başlat" düğmesine tıklar.</li>
+                </ul>
+              </li>
+              <li><strong>Her İki Kullanıcı - Adım 3: ICE Adaylarını Değiş Tokuş Et</strong>:
+                <ul className="list-circle pl-6 space-y-1 mt-1">
+                    <li>Yanıtı işledikten sonra (Başlatıcı için) veya Yanıtı oluşturduktan sonra (Misafir için), her iki kullanıcının uygulaması da "ICE Adayları" üretmeye başlayacaktır. Bunlar, tarayıcıların internet üzerinden birbirlerini bulmalarına yardımcı olan küçük metin bilgi parçalarıdır.</li>
+                    <li>ICE adayları, "ICE Adaylarınız" etiketli bir metin alanında artımlı olarak görünebilir.</li>
+                    <li>Her kullanıcı, TÜM ICE adaylarını kopyalamalı ve diğer kullanıcıya göndermelidir.</li>
+                    <li>Her kullanıcı, eşinden aldığı ICE adaylarını "Eşin ICE Adayları" etiketli metin alanına yapıştırmalı ve "Eşin Adaylarını Ekle" düğmesine tıklamalıdır. Yeni adaylar üretilirse bu adımın tekrarlanması gerekebilir.</li>
+                </ul>
+              </li>
+               <li><strong>Bağlantı</strong>: Tüm bilgiler doğru bir şekilde değiş tokuş edilirse, bağlantı durumu "Bağlandı" olarak değişecektir. Bu birkaç dakika sürebilir.</li>
             </ul>
             <p>
              Bağlantı kurulduğunda, durumun &quot;Bağlandı&quot; olarak değiştiğini göreceksiniz ve Dosya Aktarımı, Veri Aktarımı ve Mesajlaşma sekmeleri kullanılabilir hale gelecektir. Bağlantı doğrudan sizin ve eşinizin tarayıcısı arasındadır.
+            </p>
+             <p className="mt-2 text-sm text-muted-foreground">
+                <strong>Not:</strong> Bağlantı kartındaki "Anahtar Gücünü Kontrol Et / Öneri Al" düğmesi, gezinme çubuğundan erişilebilen ayrı bir "Şifre Aracı" içindir ve bu manuel WebRTC bağlantı sürecinin doğrudan bir parçası değildir. "Güvenli Anahtar Oluştur" düğmesi de önceki bir bağlantı yönteminden kalmadır ve mevcut manuel akışta kullanılmaz.
             </p>
 
             <h3 className="text-xl font-semibold mt-4 mb-2">2. Özellikleri Kullanma</h3>
@@ -144,12 +202,12 @@ export default function AboutPage() {
 
             <h3 className="text-xl font-semibold mt-4 mb-2">4. Güvenlik</h3>
             <p>
-             Cryptoshare içindeki tüm veri aktarımları (dosyalar, veri parçacıkları, mesajlar) WebRTC'nin doğal güvenliği (DTLS) kullanılarak uçtan uca şifrelenir. Oturum anahtarı, eşlerin birbirini bulmasını sağlayan Firebase aracılığıyla P2P oturumunuzu sinyalizasyon amacıyla benzersiz bir şekilde tanımlamak için kullanılır. Firebase'in kendisi aktarılan verilerinizin içeriğini görmez.
+             Cryptoshare içindeki tüm veri aktarımları (dosyalar, veri parçacıkları, mesajlar) WebRTC'nin doğal güvenliği (DTLS) kullanılarak uçtan uca şifrelenir. SDP ve ICE adaylarının manuel olarak değiş tokuşu bağlantı kurulumu içindir; gerçek veriler herhangi bir merkezi sunucudan geçmez. İlk SDP/ICE değişiminin güvenliği, kullanıcıların bu bilgiyi nasıl paylaştığına bağlıdır.
             </p>
             
             <h3 className="text-xl font-semibold mt-4 mb-2">5. Bağlantıyı Kesme</h3>
             <p>
-              Oturumu sonlandırmak için, her iki kullanıcı da &quot;Bağlantıyı Kes&quot; düğmesine tıklayabilir. Bu, P2P bağlantısını kapatacaktır. Sayfayı yenilemek veya tarayıcı sekmesini kapatmak da bağlantıyı sonlandıracaktır.
+              Oturumu sonlandırmak için, her iki kullanıcı da &quot;Bağlantıyı Kes&quot; veya "Bağlantı Sürecini Sıfırla" düğmesine tıklayabilir. Bu, P2P bağlantısını kapatacaktır. Sayfayı yenilemek veya tarayıcı sekmesini kapatmak da bağlantıyı sonlandıracaktır.
             </p>
           </section>
         </CardContent>
