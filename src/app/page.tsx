@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -36,25 +35,28 @@ export default function CryptosharePage() {
   const receivedFileChunks = useRef<Record<string, ArrayBuffer[]>>({});
 
 
-  const handleConnectionStateChange = useCallback((state: PeerConnectionState, details?: string) => {
-    setCurrentWebRTCState(state);
-    if (details) console.log("Connection state details:", details);
-
-    if (state === 'failed') {
-        toast({ title: "Connection Failed", description: details || "Could not establish P2P connection.", variant: "destructive"});
-    }
-    if (state === 'disconnected' && currentWebRTCState !== 'disconnected') { // Avoid toast on initial load
-        toast({ title: "Disconnected", description: details || "P2P connection closed."});
-        // Reset SDP and ICE states for new connection attempt
-        setLocalSdpOffer(null);
-        setLocalSdpAnswer(null);
-        setLocalIceCandidates([]);
-    }
-  }, [toast, currentWebRTCState]);
+  const handleConnectionStateChange = useCallback((newState: PeerConnectionState, details?: string) => {
+    setCurrentWebRTCState(prevState => {
+      if (newState === 'failed') {
+          toast({ title: "Connection Failed", description: details || "Could not establish P2P connection.", variant: "destructive"});
+      }
+      // Check against prevState for disconnected toast logic
+      // Avoid toast if already disconnected or if transitioning from failed (failed toast already shown)
+      if (newState === 'disconnected' && prevState !== 'disconnected' && prevState !== 'failed') { 
+          toast({ title: "Disconnected", description: details || "P2P connection closed."});
+          // Reset SDP and ICE states for new connection attempt
+          setLocalSdpOffer(null);
+          setLocalSdpAnswer(null);
+          setLocalIceCandidates([]);
+      }
+      return newState;
+    });
+    if (details) console.log(`Connection state changed to: ${newState}`, details || '');
+  }, [toast]);
 
   const handleRemotePeerDisconnected = useCallback(() => {
     toast({ title: "Peer Disconnected", description: "The other peer has disconnected.", variant: "destructive" });
-    // webRTC.disconnect() will be called internally or by ConnectionManager, updating state
+    // webRTC.disconnect() will be called internally by useWebRTC hook, updating state via handleConnectionStateChange
   }, [toast]);
 
   const handleMessageReceived = useCallback((message: { text: string; sender: 'peer'; timestamp: Date }) => {
@@ -167,10 +169,12 @@ export default function CryptosharePage() {
     onLocalIceCandidateReady: handleLocalIceCandidateReady,
   });
 
+  const { connectionState: rtcStateFromHook, disconnect: rtcDisconnect } = webRTC;
+
   useEffect(() => {
     setMounted(true);
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (webRTC.connectionState === 'connected' || webRTC.connectionState === 'connecting') {
+      if (rtcStateFromHook === 'connected' || rtcStateFromHook === 'connecting') {
         event.preventDefault(); 
         event.returnValue = ''; 
       }
@@ -178,16 +182,17 @@ export default function CryptosharePage() {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      if (webRTC.connectionState === 'connected' || webRTC.connectionState === 'connecting') {
-        webRTC.disconnect();
+      if (rtcStateFromHook === 'connected' || rtcStateFromHook === 'connecting') {
+        rtcDisconnect();
       }
     };
-  }, [webRTC]);
+  }, [rtcStateFromHook, rtcDisconnect]);
 
   const handleStartInitiator = useCallback(() => {
     setLocalSdpOffer(null); // Reset previous offer if any
     setLocalSdpAnswer(null);
     setLocalIceCandidates([]);
+    receivedFileChunks.current = {}; // Clear any partial file data
     webRTC.startInitiatorSession();
   }, [webRTC]);
 
@@ -195,6 +200,7 @@ export default function CryptosharePage() {
     setLocalSdpOffer(null); 
     setLocalSdpAnswer(null);
     setLocalIceCandidates([]);
+    receivedFileChunks.current = {}; // Clear any partial file data
     webRTC.startGuestSessionAndCreateAnswer(offerSdp);
   }, [webRTC]);
   
@@ -213,14 +219,12 @@ export default function CryptosharePage() {
   }, [webRTC, toast]);
 
   const handleDisconnect = useCallback(() => {
-    webRTC.disconnect();
+    webRTC.disconnect(); // This will trigger onConnectionStateChange to 'disconnected'
     setChatMessages([]);
     setDataSnippets([]);
     setFileActivities([]);
     receivedFileChunks.current = {};
-    setLocalSdpOffer(null);
-    setLocalSdpAnswer(null);
-    setLocalIceCandidates([]);
+    // SDP and ICE states are reset by handleConnectionStateChange when newState is 'disconnected'
   }, [webRTC]);
 
   const sendChatMessage = useCallback((text: string) => {
