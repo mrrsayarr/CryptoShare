@@ -8,6 +8,9 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, Link2, Zap, ShieldAlert, Copy, Check } from 'lucide-react';
 import { suggestStrongerPasswords } from '@/app/password-strength/actions';
 import type { SuggestStrongerPasswordsOutput } from '@/app/password-strength/actions';
+// AlertDialog components are not used, so they can be removed if not planned for immediate use.
+// For now, keeping them as they might be intended for future features.
+/*
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,6 +22,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+*/
 
 interface ConnectionManagerProps {
   isConnected: boolean;
@@ -56,7 +60,7 @@ export function ConnectionManager({
       setIsLoading(false);
       toast({
         title: 'Connected',
-        description: `Successfully connected with key: ${sessionKey.substring(0,8)}...`,
+        description: `Successfully connected with key: ${sessionKey.substring(0,8)}... (Mocked)`,
       });
     }, 1500);
   };
@@ -67,6 +71,7 @@ export function ConnectionManager({
     setTimeout(() => {
       setIsConnected(false);
       setIsLoading(false);
+      // setSessionKey(''); // Optionally clear the key on disconnect
       toast({
         title: 'Disconnected',
         description: 'Connection closed.',
@@ -98,18 +103,18 @@ export function ConnectionManager({
       setShowSuggestions(false);
       return;
     }
-    setIsLoading(true);
+    setIsLoading(true); // Use a different loading state? Or ensure it's okay to reuse.
     try {
       const result = await suggestStrongerPasswords({ password: sessionKey });
       setPasswordSuggestions(result);
       setShowSuggestions(true);
       if(result.suggestions.length > 0) {
-         toast({ title: "Password Strength Analysis", description: "Suggestions available for your custom key."});
+         toast({ title: "Key Strength Analysis", description: "Suggestions available for your custom key."});
       } else {
-         toast({ title: "Password Strength Analysis", description: "Your key seems strong, or no specific suggestions were generated."});
+         toast({ title: "Key Strength Analysis", description: "Your key seems strong, or no specific suggestions were generated."});
       }
     } catch (error) {
-      toast({ title: "Error", description: "Failed to get password suggestions.", variant: "destructive"});
+      toast({ title: "Error", description: "Failed to get key strength suggestions.", variant: "destructive"});
       setPasswordSuggestions(null);
       setShowSuggestions(false);
     } finally {
@@ -134,7 +139,7 @@ export function ConnectionManager({
         <div className="flex space-x-2">
           <Input
             id="session-key"
-            type="text"
+            type="text" // Consider type="password" if key should be obscured, or allow toggle
             placeholder="Enter or generate a session key"
             value={sessionKey}
             onChange={(e) => {
@@ -151,50 +156,57 @@ export function ConnectionManager({
             </Button>
           )}
         </div>
+
+        {!isConnected && (
+          <p className="text-xs text-muted-foreground pt-1">
+            To connect with a peer: 1. One user generates or enters a key. 2. Share this exact key securely with your peer. 3. Both users enter the same key above and click 'Connect'.
+          </p>
+        )}
+
          {!isConnected && sessionKey && sessionKey.length > 0 && (
             <Button onClick={checkPasswordStrength} variant="outline" className="w-full mt-2" disabled={isLoading || isGenerating}>
               {isLoading && !isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldAlert className="mr-2 h-4 w-4" />}
-              Check Strength / Get Suggestions
+              Check Key Strength / Get Suggestions
             </Button>
           )}
       </div>
 
-      {showSuggestions && passwordSuggestions && passwordSuggestions.suggestions.length > 0 && (
-        <div className="mt-4 p-4 border rounded-md bg-card text-card-foreground">
+      {showSuggestions && passwordSuggestions && passwordSuggestions.suggestions.length > 0 && !isConnected && (
+        <Card className="mt-4 p-4 border rounded-md bg-card text-card-foreground">
           <h4 className="font-semibold mb-2 text-primary">Key Strength Suggestions:</h4>
           <ul className="list-disc pl-5 space-y-1 text-sm">
             {passwordSuggestions.suggestions.map((suggestion, index) => (
               <li key={index}>
-                <code>{suggestion}</code> - <span className="text-foreground/70">{passwordSuggestions.reasoning[index]}</span>
+                <code className="bg-background px-1 py-0.5 rounded text-sm">{suggestion}</code> - <span className="text-foreground/70">{passwordSuggestions.reasoning[index]}</span>
               </li>
             ))}
           </ul>
-        </div>
+        </Card>
       )}
       
-      <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+      <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 pt-2">
         <Button onClick={generateKey} variant="outline" className="w-full" disabled={isConnected || isLoading || isGenerating}>
           {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
           Generate Secure Key
         </Button>
         {isConnected ? (
-          <Button onClick={handleDisconnect} variant="destructive" className="w-full" disabled={isLoading}>
-            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
+          <Button onClick={handleDisconnect} variant="destructive" className="w-full" disabled={isLoading && !isGenerating /* Allow disconnect even if strength check is loading */}>
+            {isLoading && !isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
             Disconnect
           </Button>
         ) : (
-          <Button onClick={handleConnect} className="w-full" disabled={isLoading || !sessionKey}>
-            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
+          <Button onClick={handleConnect} className="w-full" disabled={(isLoading && !isGenerating) || !sessionKey}>
+            {isLoading && !isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
             Connect
           </Button>
         )}
       </div>
 
-      <div className="text-center text-sm">
-        Status: {isLoading ? (
+      <div className="text-center text-sm pt-2">
+        Status: {isLoading && !isGenerating ? (
           <span className="text-yellow-500 font-semibold">Processing...</span>
         ) : isConnected ? (
-          <span className="text-green-500 font-semibold">Connected</span>
+          <span className="text-green-500 font-semibold">Connected (Mocked)</span>
         ) : (
           <span className="text-red-500 font-semibold">Disconnected</span>
         )}
