@@ -15,18 +15,14 @@ import type {
   ChatMessage, 
   DataSnippet, 
   FileMetadata, 
-  FileChunk
+  FileChunk,
+  TransferActivityFile
 } from '@/types/cryptoshare';
-import type { TransferActivityFile } from '@/types/cryptoshare';
 import { useToast } from "@/hooks/use-toast";
 
 export default function CryptosharePage() {
-  // This state is now directly driven by useWebRTC's currentWebRTCState
-  const [webRTCStateFromHook, setWebRTCStateFromHook] = useState<PeerConnectionState>('disconnected');
-  
-  const [localSdpOfferForDisplay, setLocalSdpOfferForDisplay] = useState<string | null>(null);
-  const [localSdpAnswerForDisplay, setLocalSdpAnswerForDisplay] = useState<string | null>(null);
-  const [localIceCandidatesForDisplay, setLocalIceCandidatesForDisplay] = useState<RTCIceCandidateInit[]>([]);
+  const [appWebRTCState, setAppWebRTCState] = useState<PeerConnectionState>('disconnected');
+  const [sessionKey, setSessionKey] = useState<string | null>(null); // For initiator to display
   
   const [mounted, setMounted] = useState(false);
   const { toast } = useToast();
@@ -35,34 +31,29 @@ export default function CryptosharePage() {
   const [dataSnippets, setDataSnippets] = useState<DataSnippet[]>([]);
   const [fileActivities, setFileActivities] = useState<TransferActivityFile[]>([]);
   const receivedFileChunks = useRef<Record<string, ArrayBuffer[]>>({});
+  const appWebRTCStateRef = useRef(appWebRTCState);
 
-  const webRTCStateRef = useRef(webRTCStateFromHook);
   useEffect(() => {
-    webRTCStateRef.current = webRTCStateFromHook;
-  }, [webRTCStateFromHook]);
+    appWebRTCStateRef.current = appWebRTCState;
+  }, [appWebRTCState]);
 
-  const handleConnectionStateChange = useCallback((newState: PeerConnectionState, details?: string) => {
-    console.log(`CryptosharePage: Received connection state change from hook: ${newState}, Details: ${details}`);
-    setWebRTCStateFromHook(newState); // Update our local copy of the state
+  const handleConnectionStateChange = useCallback((newState: PeerConnectionState, details?: string | { sessionKey?: string }) => {
+    console.log(`CryptosharePage: Received connection state change from hook: ${newState}, Details:`, details);
+    setAppWebRTCState(newState);
+
+    if (typeof details === 'object' && details?.sessionKey) {
+      setSessionKey(details.sessionKey);
+    } else if (newState === 'disconnected' || newState === 'failed') {
+      setSessionKey(null); // Clear session key on disconnect or failure
+    }
 
     if (newState === 'failed') {
-        toast({ title: "Bağlantı Başarısız Oldu", description: details || "P2P bağlantısı kurulamadı.", variant: "destructive"});
+        toast({ title: "Bağlantı Başarısız Oldu", description: (typeof details === 'string' ? details : "P2P bağlantısı kurulamadı.") || "P2P bağlantısı kurulamadı.", variant: "destructive"});
     }
-    if (newState === 'disconnected' && ['connected', 'connecting', 'offer_generated', 'answer_generated'].includes(webRTCStateRef.current)) { 
-        toast({ title: "Bağlantı Kesildi", description: details || "P2P bağlantısı kapandı."});
+    if (newState === 'disconnected' && ['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session'].includes(appWebRTCStateRef.current)) { 
+        toast({ title: "Bağlantı Kesildi", description: (typeof details === 'string' ? details : "P2P bağlantısı kapandı.") || "P2P bağlantısı kapandı."});
     }
-    
-    if (newState === 'disconnected' || newState === 'failed') {
-        setLocalSdpOfferForDisplay(null);
-        setLocalSdpAnswerForDisplay(null);
-        setLocalIceCandidatesForDisplay([]);
-        // Optionally reset chat/data/file states here if desired on full disconnect/fail
-        // setChatMessages([]);
-        // setDataSnippets([]);
-        // setFileActivities([]);
-        // receivedFileChunks.current = {};
-    }
-  }, [toast]); // webRTCStateRef is implicitly handled by its own effect
+  }, [toast]);
 
   const handleMessageReceived = useCallback((message: { text: string; sender: 'peer'; timestamp: Date }) => {
     setChatMessages(prev => [...prev, { ...message, id: `msg-${Date.now()}-${Math.random()}` }]);
@@ -150,24 +141,6 @@ export default function CryptosharePage() {
     });
   }, [toast]);
 
-  const handleLocalSdpReady = useCallback((type: 'offer' | 'answer', sdp: string) => {
-    if (type === 'offer') {
-      console.log("CryptosharePage: Local Offer SDP Ready for display.");
-      setLocalSdpOfferForDisplay(sdp);
-      setLocalSdpAnswerForDisplay(null); 
-      setLocalIceCandidatesForDisplay([]); // Clear previous ICE when new offer is generated
-    } else {
-      console.log("CryptosharePage: Local Answer SDP Ready for display.");
-      setLocalSdpAnswerForDisplay(sdp);
-      setLocalIceCandidatesForDisplay([]); // Clear previous ICE when new answer is generated
-    }
-  }, []);
-
-  const handleLocalIceCandidateReady = useCallback((candidate: RTCIceCandidateInit) => {
-    console.log("CryptosharePage: Local ICE Candidate Ready for display.");
-    setLocalIceCandidatesForDisplay(prev => [...prev, candidate]);
-  }, []);
-
   const webRTC = useWebRTC({
     onConnectionStateChange: handleConnectionStateChange,
     onMessageReceived: handleMessageReceived,
@@ -176,14 +149,12 @@ export default function CryptosharePage() {
     onFileApproved: handleFileApprovedByPeer, 
     onFileRejected: handleFileRejectedByPeer, 
     onFileChunkReceived: handleFileChunkReceived,
-    onLocalSdpReady: handleLocalSdpReady,
-    onLocalIceCandidateReady: handleLocalIceCandidateReady,
   });
 
   useEffect(() => {
     setMounted(true);
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (['connected', 'connecting', 'offer_generated', 'answer_generated'].includes(webRTCStateRef.current)) {
+      if (['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session'].includes(appWebRTCStateRef.current)) {
         event.preventDefault();
         event.returnValue = '';
       }
@@ -192,48 +163,32 @@ export default function CryptosharePage() {
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      if (['connected', 'connecting', 'offer_generated', 'answer_generated'].includes(webRTCStateRef.current)) {
-        console.log(`CryptosharePage: Cleanup on unmount/navigation. Current state: ${webRTCStateRef.current}. Disconnecting WebRTC.`);
+      if (['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session'].includes(appWebRTCStateRef.current)) {
+        console.log(`CryptosharePage: Cleanup on unmount/navigation. Current state: ${appWebRTCStateRef.current}. Disconnecting WebRTC.`);
         webRTC.disconnect(); 
       }
     };
-  }, [webRTC.disconnect]); // Only depend on the stable disconnect function
+  }, [webRTC.disconnect]);
 
 
-  const handleStartInitiator = useCallback(() => {
-    console.log("CryptosharePage: User wants to start Initiator Session.");
-    setLocalSdpOfferForDisplay(null); 
-    setLocalSdpAnswerForDisplay(null);
-    setLocalIceCandidatesForDisplay([]);
+  const handleCreateSession = useCallback(() => {
+    console.log("CryptosharePage: User wants to create a new session.");
     receivedFileChunks.current = {}; 
-    webRTC.startInitiatorSession();
+    setChatMessages([]);
+    setDataSnippets([]);
+    setFileActivities([]);
+    webRTC.createSession();
   }, [webRTC]);
 
-  const handleProcessOfferAndCreateAnswer = useCallback((offerSdp: string) => {
-    console.log("CryptosharePage: User wants to process Offer and Create Answer.");
-    setLocalSdpOfferForDisplay(null); 
-    setLocalSdpAnswerForDisplay(null);
-    setLocalIceCandidatesForDisplay([]);
+  const handleJoinSession = useCallback((key: string) => {
+    console.log(`CryptosharePage: User wants to join session with key: ${key}`);
     receivedFileChunks.current = {};
-    webRTC.startGuestSessionAndCreateAnswer(offerSdp);
+    setChatMessages([]);
+    setDataSnippets([]);
+    setFileActivities([]);
+    webRTC.joinSession(key);
   }, [webRTC]);
   
-  const handleAcceptAnswer = useCallback((answerSdp: string) => {
-    console.log("CryptosharePage: User wants to accept Answer.");
-    webRTC.acceptAnswer(answerSdp);
-  }, [webRTC]);
-
-  const handleAddRemoteIceCandidate = useCallback((candidateJson: string) => {
-     try {
-        console.log("CryptosharePage: User wants to add Remote ICE Candidate.");
-        const candidate = JSON.parse(candidateJson) as RTCIceCandidateInit;
-        webRTC.addRemoteIceCandidate(candidate);
-     } catch (e) {
-        toast({ title: "Geçersiz ICE Adayı", description: "Sağlanan ICE adayı geçerli JSON değildi.", variant: "destructive"});
-        console.error("Error parsing ICE candidate JSON:", e);
-     }
-  }, [webRTC, toast]);
-
   const handleDisconnectFromManager = useCallback(() => {
     console.log("CryptosharePage: User initiated disconnect from ConnectionManager.");
     webRTC.disconnect(); 
@@ -287,8 +242,8 @@ export default function CryptosharePage() {
         console.log(`CryptosharePage: Starting to send chunks for file ${activity.name}, ID: ${activity.id}`);
 
         function readNextChunk() {
-          if (chunkNumber >= totalChunks || webRTCStateRef.current !== 'connected') {
-            if (webRTCStateRef.current !== 'connected' && chunkNumber < totalChunks) {
+          if (chunkNumber >= totalChunks || appWebRTCStateRef.current !== 'connected') {
+            if (appWebRTCStateRef.current !== 'connected' && chunkNumber < totalChunks) {
                 console.warn(`CryptosharePage: File transfer for ${activity.name} interrupted due to disconnect.`);
                 setFileActivities(prev => prev.map(f => f.id === activity.id ? {...f, status: 'error', progress: undefined} : f)); 
             }
@@ -300,15 +255,16 @@ export default function CryptosharePage() {
         }
 
         reader.onload = (e) => {
-          if (e.target?.result && webRTCStateRef.current === 'connected') {
+          if (e.target?.result && appWebRTCStateRef.current === 'connected') {
             const chunkData = e.target.result as ArrayBuffer;
+            // Convert ArrayBuffer to base64 string for JSON compatibility
             const base64ChunkData = btoa(new Uint8Array(chunkData).reduce((data, byte) => data + String.fromCharCode(byte), ''));
 
             webRTC.sendFileChunk({
               fileId: activity.id,
               chunkNumber,
               totalChunks,
-              data: base64ChunkData,
+              data: base64ChunkData, // Send base64 string
               isLast: chunkNumber === totalChunks - 1,
             });
             
@@ -327,7 +283,7 @@ export default function CryptosharePage() {
             } else if (chunkNumber === totalChunks) {
                 toast({title: "Dosya Gönderildi", description: `${activity.name} başarıyla gönderildi.`});
             }
-          } else if (webRTCStateRef.current !== 'connected') {
+          } else if (appWebRTCStateRef.current !== 'connected') {
              console.warn(`CryptosharePage: File transfer for ${activity.name} (onload) interrupted due to disconnect.`);
              setFileActivities(prev => prev.map(f => f.id === activity.id ? {...f, status: 'error', progress: undefined} : f));
           }
@@ -340,7 +296,7 @@ export default function CryptosharePage() {
         readNextChunk();
       }
     });
-  }, [fileActivities, webRTC, toast]); // webRTCStateFromHook (via webRTCStateRef) is implicitly handled
+  }, [fileActivities, webRTC, toast]);
 
 
   if (!mounted) {
@@ -356,24 +312,20 @@ export default function CryptosharePage() {
       <Card className="w-full max-w-2xl shadow-xl">
         <CardHeader className="flex flex-row items-center space-x-3 pb-4">
           <Shield className="h-8 w-8 text-primary" />
-          <CardTitle className="text-2xl font-bold">Güvenli P2P Bağlantısı</CardTitle>
+          <CardTitle className="text-2xl font-bold">Güvenli P2P Bağlantısı (Supabase ile)</CardTitle>
         </CardHeader>
         <CardContent>
           <ConnectionManager
-            currentConnectionState={webRTCStateFromHook} 
-            onStartInitiator={handleStartInitiator}
-            onProcessOfferAndCreateAnswer={handleProcessOfferAndCreateAnswer}
-            onAcceptAnswer={handleAcceptAnswer}
-            onAddRemoteIceCandidate={handleAddRemoteIceCandidate}
+            currentConnectionState={appWebRTCState} 
+            sessionKey={sessionKey}
+            onCreateSession={handleCreateSession}
+            onJoinSession={handleJoinSession}
             onDisconnect={handleDisconnectFromManager} 
-            localSdpOffer={localSdpOfferForDisplay}
-            localSdpAnswer={localSdpAnswerForDisplay}
-            localIceCandidates={localIceCandidatesForDisplay}
           />
         </CardContent>
       </Card>
 
-      {webRTCStateFromHook === 'connected' && (
+      {appWebRTCState === 'connected' && (
         <Tabs defaultValue="file-transfer" className="w-full max-w-2xl">
           <TabsList className="grid w-full grid-cols-3 bg-card border border-border shadow-sm">
             <TabsTrigger value="file-transfer" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
