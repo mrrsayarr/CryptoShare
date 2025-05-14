@@ -9,7 +9,7 @@ import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   // {
-  //   urls: 'turn:your-turn-server.com:port', 
+  //   urls: 'turn:your-turn-server.com:port',
   //   username: 'your-username',
   //   credential: 'your-password',
   // },
@@ -41,7 +41,7 @@ export function useWebRTC({
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const supabaseChannelRef = useRef<RealtimeChannel | null>(null);
   const currentSessionIdRef = useRef<string | null>(null);
-  
+
   const [currentWebRTCState, setCurrentWebRTCState] = useState<PeerConnectionState>('disconnected');
   const webRTCStateRef = useRef(currentWebRTCState);
 
@@ -89,9 +89,9 @@ export function useWebRTC({
     if (notifyParent && webRTCStateRef.current !== 'disconnected') {
         updateState('disconnected', reason || 'Connection closed or reset.');
     } else if (!notifyParent && webRTCStateRef.current !== 'disconnected') {
-        setCurrentWebRTCState('disconnected'); 
+        setCurrentWebRTCState('disconnected');
     }
-  }, [updateState]); // Supabase removed as direct dependency, it's globally available
+  }, [updateState]); // supabase removed as direct dependency
 
   const disconnect = useCallback(() => {
     disconnectCleanup(true, 'User initiated disconnect.');
@@ -136,10 +136,10 @@ export function useWebRTC({
   const createPeerConnection = useCallback((sessionId: string, role: 'initiator' | 'guest') => {
     if(peerConnectionRef.current || dataChannelRef.current || supabaseChannelRef.current) {
         console.log("useWebRTC: Cleaning up existing connection before creating a new one.");
-        disconnectCleanup(false); // Don't notify parent yet, as we are about to start a new state
+        disconnectCleanup(false);
     }
     currentSessionIdRef.current = sessionId;
-    
+
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     peerConnectionRef.current = pc;
 
@@ -161,7 +161,7 @@ export function useWebRTC({
       }
     };
 
-    pc.oniceconnectionstatechange = () => { 
+    pc.oniceconnectionstatechange = () => {
       const currentPc = peerConnectionRef.current;
       if (!currentPc) return;
       console.log('useWebRTC: ICE connection state change:', currentPc.iceConnectionState);
@@ -171,7 +171,7 @@ export function useWebRTC({
          updateState('disconnected', 'ICE connection disconnected.');
       }
     };
-    
+
     pc.onconnectionstatechange = () => {
       const currentPc = peerConnectionRef.current;
       if (!currentPc) return;
@@ -188,22 +188,21 @@ export function useWebRTC({
           if (dataChannelRef.current?.readyState === 'open') {
             updateState('connected', 'PeerConnection connected and DataChannel open.');
           } else if (webRTCStateRef.current !== 'connected') {
-            // Wait for data channel to open
             console.log("useWebRTC: PeerConnection connected, waiting for DataChannel to open.");
           }
           break;
         case 'failed':
           if (webRTCStateRef.current !== 'failed') updateState('failed', 'PeerConnection failed.');
           break;
-        case 'disconnected':       
-        case 'closed':       
+        case 'disconnected':
+        case 'closed':
           if (webRTCStateRef.current !== 'disconnected' && webRTCStateRef.current !== 'failed') {
             updateState('disconnected', `PeerConnection ${newPcState}.`);
           }
           break;
       }
     };
-    
+
     pc.ondatachannel = (event) => {
       console.log('useWebRTC: Remote data channel received:', event.channel.label);
       setupDataChannelEvents(event.channel);
@@ -216,9 +215,11 @@ export function useWebRTC({
     if (webRTCStateRef.current !== 'disconnected') {
       console.log("useWebRTC: createSession called while not disconnected. Current state:", webRTCStateRef.current, "Cleaning up first.");
       disconnectCleanup(true, 'Resetting before creating new session.');
-      await new Promise(resolve => setTimeout(resolve, 200)); 
+      // Short delay to allow cleanup and state propagation
+      await new Promise(resolve => setTimeout(resolve, 250));
       if (webRTCStateRef.current !== 'disconnected') {
-        console.warn("useWebRTC: State did not reset to disconnected. Aborting createSession.");
+        console.warn("useWebRTC: State did not reset to disconnected after cleanup. Aborting createSession. Current state:", webRTCStateRef.current);
+        updateState('failed', 'Failed to reset state before creating new session.');
         return;
       }
     }
@@ -237,13 +238,21 @@ export function useWebRTC({
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
+      // IMPORTANT: Check Supabase RLS policies for 'webrtc_sessions' table
+      // if inserts are failing silently or with vague errors.
+      // Anon key needs INSERT permission.
       const { error: insertError } = await supabase
         .from(SUPABASE_SESSIONS_TABLE)
         .insert([{ id: sessionKey, offer_sdp: offer, status: 'waiting_for_guest' }]);
 
       if (insertError) {
-        // Throw a new error with more details if Supabase returns an error
-        throw new Error(`Supabase insert error: ${insertError.message} (Code: ${insertError.code}) Details: ${insertError.details}`);
+        console.error("useWebRTC: Raw Supabase insertError object:", insertError);
+        const stringifiedError = JSON.stringify(insertError, Object.getOwnPropertyNames(insertError));
+        console.error("useWebRTC: Stringified Supabase insertError:", stringifiedError);
+        const message = insertError.message || "Unknown Supabase insert error";
+        const code = (insertError as any).code || "N/A";
+        const details = (insertError as any).details || "N/A";
+        throw new Error(`Supabase insert error: ${message} (Code: ${code}) Details: ${details}. Full error: ${stringifiedError}`);
       }
 
       const channel = supabase.channel(`session-${sessionKey}`);
@@ -252,7 +261,7 @@ export function useWebRTC({
       channel
         .on('broadcast', { event: 'answer' }, async ({ payload }: { payload: SupabaseAnswerPayload }) => {
             console.log('useWebRTC: Initiator received answer via broadcast:', payload.sdp.type);
-            if (pc.signalingState === 'have-local-offer' || pc.signalingState === 'stable') { 
+            if (pc.signalingState === 'have-local-offer' || pc.signalingState === 'stable') {
                 await pc.setRemoteDescription(payload.sdp);
                 updateState('connecting', 'Answer received, ICE negotiation continuing.');
             } else {
@@ -283,19 +292,10 @@ export function useWebRTC({
 
     } catch (error: any) {
       console.error('useWebRTC: Initiator - Error during createSession:', error);
-      // Attempt to get a more useful string representation of the error
-      let errorMessage = 'Unknown error during session creation.';
-      if (typeof error === 'string') {
-        errorMessage = error;
-      } else if (error && error.message) {
-        errorMessage = error.message;
-      } else if (error && typeof error.toString === 'function') {
-        errorMessage = error.toString();
-      }
-      
-      console.error('Error stringified:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+      console.error('Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
       console.error('Error toString():', error && typeof error.toString === 'function' ? error.toString() : 'N/A');
-      
+
+      const errorMessage = error.message || (typeof error === 'string' ? error : JSON.stringify(error));
       const errorCode = error.code || 'N/A';
       updateState('failed', `Error creating session: ${errorMessage} (Code: ${errorCode})`);
       disconnectCleanup();
@@ -306,15 +306,18 @@ export function useWebRTC({
     if (webRTCStateRef.current !== 'disconnected') {
         console.log("useWebRTC: joinSession called while not disconnected. Current state:", webRTCStateRef.current, "Cleaning up first.");
         disconnectCleanup(true, 'Resetting before joining session.');
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise(resolve => setTimeout(resolve, 250));
          if (webRTCStateRef.current !== 'disconnected') {
-            console.warn("useWebRTC: State did not reset to disconnected. Aborting joinSession.");
+            console.warn("useWebRTC: State did not reset to disconnected after cleanup. Aborting joinSession. Current state:", webRTCStateRef.current);
+            updateState('failed', 'Failed to reset state before joining session.');
             return;
         }
     }
     updateState('joining_session');
 
     try {
+      // IMPORTANT: Check Supabase RLS policies for 'webrtc_sessions' table
+      // if selects are failing or returning no data. Anon key needs SELECT permission.
       const { data, error: fetchError } = await supabase
         .from(SUPABASE_SESSIONS_TABLE)
         .select('offer_sdp')
@@ -322,25 +325,31 @@ export function useWebRTC({
         .single<Pick<WebRTCSession, 'offer_sdp'>>();
 
       if (fetchError) {
-        throw new Error(`Supabase fetch error: ${fetchError.message} (Code: ${fetchError.code}) Details: ${fetchError.details}`);
+        console.error("useWebRTC: Raw Supabase fetchError object:", fetchError);
+        const stringifiedError = JSON.stringify(fetchError, Object.getOwnPropertyNames(fetchError));
+        console.error("useWebRTC: Stringified Supabase fetchError:", stringifiedError);
+        const message = fetchError.message || "Unknown Supabase fetch error";
+        const code = (fetchError as any).code || "N/A";
+        const details = (fetchError as any).details || "N/A";
+        throw new Error(`Supabase fetch error: ${message} (Code: ${code}) Details: ${details}. Full error: ${stringifiedError}`);
       }
       if (!data || !data.offer_sdp) {
-        throw new Error('Session not found or no offer SDP.');
+        throw new Error('Session not found or no offer SDP in Supabase.');
       }
-      
+
       const offerSdp = data.offer_sdp;
       const pc = createPeerConnection(sessionKey, 'guest');
       if (!pc) {
         updateState('failed', 'Failed to initialize PeerConnection for guest.');
         return;
       }
-      
+
       const channel = supabase.channel(`session-${sessionKey}`);
       supabaseChannelRef.current = channel;
 
       channel
         .on('broadcast', { event: 'ice-candidate' }, async ({ payload }: { payload: SupabaseIceCandidatePayload }) => {
-            if (payload.from === 'initiator' && pc.remoteDescription && pc.signalingState !== 'closed') { 
+            if (payload.from === 'initiator' && pc.remoteDescription && pc.signalingState !== 'closed') {
                  console.log('useWebRTC: Guest received ICE candidate from initiator:', payload.candidate.candidate?.substring(0,30) + "...");
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
@@ -349,10 +358,10 @@ export function useWebRTC({
                 }
             }
         })
-        .subscribe(async (status, err) => { 
+        .subscribe(async (status, err) => {
             if (status === 'SUBSCRIBED') {
                 console.log(`useWebRTC: Guest subscribed to Supabase channel: session-${sessionKey}`);
-                
+
                 await pc.setRemoteDescription(offerSdp);
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
@@ -373,6 +382,8 @@ export function useWebRTC({
                 console.log("useWebRTC: Guest sent answer to initiator via broadcast.");
                 updateState('connecting', 'Answer sent, ICE negotiation continuing.');
 
+                // Optionally update the session table with the answer, though broadcast is primary for speed.
+                // Check RLS policies for UPDATE if this fails.
                 const { error: updateError } = await supabase
                     .from(SUPABASE_SESSIONS_TABLE)
                     .update({ answer_sdp: answer, status: 'guest_joined' })
@@ -387,31 +398,22 @@ export function useWebRTC({
                 disconnectCleanup();
             }
         });
-      
+
     } catch (error: any) {
       console.error('useWebRTC: Guest - Error during joinSession:', error);
-      let errorMessage = 'Unknown error during session joining.';
-       if (typeof error === 'string') {
-        errorMessage = error;
-      } else if (error && error.message) {
-        errorMessage = error.message;
-      } else if (error && typeof error.toString === 'function') {
-        errorMessage = error.toString();
-      }
-
-      console.error('Error stringified:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+      console.error('Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
       console.error('Error toString():', error && typeof error.toString === 'function' ? error.toString() : 'N/A');
-
+      const errorMessage = error.message || (typeof error === 'string' ? error : JSON.stringify(error));
       const errorCode = error.code || 'N/A';
       updateState('failed', `Error joining session: ${errorMessage} (Code: ${errorCode})`);
       disconnectCleanup();
     }
   }, [createPeerConnection, updateState, disconnectCleanup]);
-  
+
   useEffect(() => {
     return () => {
       console.log("useWebRTC: Hook unmounting. Calling disconnectCleanup.");
-      disconnectCleanup(false); 
+      disconnectCleanup(false);
     };
   }, [disconnectCleanup]);
 
@@ -421,9 +423,11 @@ export function useWebRTC({
         dataChannelRef.current.send(JSON.stringify({ type, payload }));
       } catch (error: any) {
         console.error(`useWebRTC: Error sending ${type}:`, error);
+        // Optionally, update state to reflect send error, or use toast
       }
     } else {
       console.warn(`useWebRTC: Cannot send ${type}, data channel not open. DC State: ${dataChannelRef.current?.readyState}, PC State: ${peerConnectionRef.current?.connectionState}`);
+      // Optionally, notify user or retry, or use toast
     }
   }, []);
 
@@ -442,7 +446,7 @@ export function useWebRTC({
   const sendFileApproval = useCallback((fileId: string, approved: boolean) => {
     sendGenericData(approved ? 'file_approve' : 'file_reject', { fileId });
   }, [sendGenericData]);
-  
+
   const sendFileChunk = useCallback((chunk: FileChunk) => {
     sendGenericData('file_chunk', chunk);
   }, [sendGenericData]);
@@ -456,6 +460,6 @@ export function useWebRTC({
     sendFileMetadata,
     sendFileApproval,
     sendFileChunk,
-    currentWebRTCState, 
+    currentWebRTCState,
   };
 }
