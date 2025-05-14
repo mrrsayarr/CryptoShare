@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -49,14 +50,15 @@ export function ConnectionManager({
   useEffect(() => {
     console.log("ConnectionManager: currentConnectionState prop changed to", currentConnectionState);
     if (currentConnectionState === 'disconnected' || currentConnectionState === 'failed') {
-      if (role !== 'none') { // Only reset if not already in initial state
-        console.log("ConnectionManager: Resetting role and inputs due to disconnect/fail.");
+      if (role !== 'none') { // Only log/perform state set if actually changing role
+        console.log("ConnectionManager: Resetting role to 'none' and clearing inputs due to disconnect/fail. Current role:", role);
         setRole('none');
       }
+      // Always clear inputs if disconnected or failed, even if role was already 'none'
       setRemoteSdpForInput('');
       setRemoteIceCandidateInput('');
     }
-  }, [currentConnectionState, role]);
+  }, [currentConnectionState]); // IMPORTANT: Removed 'role' from dependency array
 
   const localIceCandidatesDisplay = localIceCandidates.map(c => JSON.stringify(c)).join('\n');
 
@@ -75,11 +77,8 @@ export function ConnectionManager({
   };
 
   const handleStartInitiatorClick = () => {
-    // Button should be disabled if not in a state to start.
-    // currentConnectionState should be 'disconnected' or 'failed' to allow starting.
     if (currentConnectionState === 'disconnected' || currentConnectionState === 'failed') {
         setRole('initiator');
-        // Clear any stale input from previous guest attempts
         setRemoteSdpForInput(''); 
         setRemoteIceCandidateInput('');
         onStartInitiator();
@@ -141,7 +140,7 @@ export function ConnectionManager({
   };
   
   const handleDisconnectOrResetClick = () => {
-    onDisconnect(); // This will trigger useWebRTC to change currentConnectionState, leading to UI reset via useEffect.
+    onDisconnect(); 
   };
 
   const isLoading = currentConnectionState === 'connecting';
@@ -185,7 +184,6 @@ export function ConnectionManager({
       <h3 className="text-lg font-semibold text-primary">Initiator Steps:</h3>
       {currentConnectionState === 'connecting' && !localSdpOffer && <p className="flex items-center text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating Offer...</p>}
       
-      {/* Step 1: Show Offer SDP once generated */}
       {localSdpOffer && (currentConnectionState === 'offer_generated' || currentConnectionState === 'connecting') && (
         <Card>
           <CardHeader><CardTitle>1. Share Your Offer SDP</CardTitle></CardHeader>
@@ -199,7 +197,6 @@ export function ConnectionManager({
         </Card>
       )}
 
-      {/* Step 2: Input for Guest's Answer, shown after offer is generated and we are not yet connected/failed */}
       {localSdpOffer && (currentConnectionState === 'offer_generated' || currentConnectionState === 'connecting') && !currentConnectionState.match(/^(connected|failed)$/) && (
         <Card>
           <CardHeader><CardTitle>2. Paste Guest&apos;s Answer SDP</CardTitle></CardHeader>
@@ -220,7 +217,6 @@ export function ConnectionManager({
           </CardContent>
         </Card>
       )}
-      {/* ICE Exchange Section: shown if offer is generated and answer has been processed (implicitly moving state towards 'connecting' or 'connected') */}
       {(currentConnectionState === 'connecting' || currentConnectionState === 'connected' || currentConnectionState === 'offer_generated' || currentConnectionState === 'answer_generated' ) && localSdpOffer && renderIceExchangeSection()}
     </div>
   );
@@ -228,7 +224,6 @@ export function ConnectionManager({
   const renderGuestSteps = () => (
      <div className="space-y-4">
       <h3 className="text-lg font-semibold text-primary">Guest Steps:</h3>
-      {/* Step 1: Input for Initiator's Offer */}
       {(currentConnectionState === 'disconnected' || currentConnectionState === 'failed' || currentConnectionState === 'connecting') && !localSdpAnswer && (
         <Card>
           <CardHeader><CardTitle>1. Paste Initiator&apos;s Offer SDP</CardTitle></CardHeader>
@@ -251,7 +246,6 @@ export function ConnectionManager({
       )}
       {currentConnectionState === 'connecting' && !localSdpAnswer && role === 'guest' && <p className="flex items-center text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing Offer & Generating Answer...</p>}
 
-      {/* Step 2: Show Guest's Answer SDP once generated */}
       {localSdpAnswer && (currentConnectionState === 'answer_generated' || currentConnectionState === 'connecting') && (
          <Card>
           <CardHeader><CardTitle>2. Share Your Answer SDP</CardTitle></CardHeader>
@@ -264,17 +258,15 @@ export function ConnectionManager({
           </CardContent>
         </Card>
       )}
-      {/* ICE Exchange Section for Guest: shown if answer is generated */}
       {(currentConnectionState === 'connecting' || currentConnectionState === 'connected' || currentConnectionState === 'answer_generated') && localSdpAnswer && renderIceExchangeSection()}
     </div>
   );
 
  const renderIceExchangeSection = () => {
-    // Show ICE section if we are in a state where ICE candidates are relevant
     const showIce = currentConnectionState === 'connecting' || currentConnectionState === 'connected' || 
                     currentConnectionState === 'offer_generated' || currentConnectionState === 'answer_generated';
     
-    if (showIce && (localSdpOffer || localSdpAnswer)) { // Ensure SDP has been generated/processed at least
+    if (showIce && (localSdpOffer || localSdpAnswer)) { 
         return (
             <Card>
                 <CardHeader>
@@ -349,7 +341,6 @@ export function ConnectionManager({
       {currentConnectionState === 'connected' && renderConnectedState()}
       {currentConnectionState === 'failed' && renderFailedState()}
 
-      {/* Reset button if not connected but a role is chosen, or if failed */}
       {(role !== 'none' && currentConnectionState !== 'connected' && currentConnectionState !== 'failed') && (
          <Button onClick={handleDisconnectOrResetClick} variant="outline" className="w-full mt-4">
             <VenetianMask className="mr-2 h-4 w-4" />
@@ -363,3 +354,5 @@ export function ConnectionManager({
     </div>
   );
 }
+
+    
