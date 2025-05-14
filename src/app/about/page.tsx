@@ -1,6 +1,6 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Info } from 'lucide-react';
+import { Info, AlertTriangle } from 'lucide-react';
 
 export default function AboutPage() {
   return (
@@ -100,10 +100,25 @@ export default function AboutPage() {
               <li>The AI will provide suggestions for stronger alternatives and explain why they are more secure.</li>
             </ul>
 
-            <h3 className="text-xl font-semibold mt-4 mb-2">4. Security</h3>
+            <h3 className="text-xl font-semibold mt-4 mb-2">4. Security & Connectivity</h3>
             <p>
               All data transfers (files, data snippets, messages) within Cryptoshare are end-to-end encrypted using the inherent security of WebRTC (DTLS). The manual exchange of SDP and ICE candidates is for connection setup; the actual data does not pass through any central server. The security of the initial SDP/ICE exchange depends on how users share this information.
             </p>
+             <div className="mt-3 p-4 border-l-4 border-yellow-500 bg-yellow-50 dark:bg-yellow-900/30 rounded-md">
+                <div className="flex">
+                    <div className="flex-shrink-0">
+                        <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" aria-hidden="true" />
+                    </div>
+                    <div className="ml-3">
+                        <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                            <strong>Connectivity Note (STUN/TURN Servers):</strong><br />
+                            WebRTC uses STUN servers (like the one Cryptoshare is configured with) to help discover your public IP address and facilitate direct P2P connections. However, sometimes, due to restrictive network configurations (like complex NATs or firewalls), STUN alone might not be enough.
+                            In such cases, a TURN server is required to relay the traffic. If you experience persistent connection failures (e.g., "ICE failed" or status stuck on "Connecting"), it might be due to your network environment.
+                            Cryptoshare is prepared to use TURN servers if they are configured, but it does not provide one. For reliable connections across all network types, using a publicly available or self-hosted TURN server might be necessary.
+                        </p>
+                    </div>
+                </div>
+            </div>
             
             <h3 className="text-xl font-semibold mt-4 mb-2">5. Disconnecting</h3>
             <p>
@@ -200,10 +215,25 @@ export default function AboutPage() {
               <li>Yapay zeka, daha güçlü alternatifler için öneriler sunacak ve neden daha güvenli olduklarını açıklayacaktır.</li>
             </ul>
 
-            <h3 className="text-xl font-semibold mt-4 mb-2">4. Güvenlik</h3>
+            <h3 className="text-xl font-semibold mt-4 mb-2">4. Güvenlik ve Bağlanabilirlik</h3>
             <p>
              Cryptoshare içindeki tüm veri aktarımları (dosyalar, veri parçacıkları, mesajlar) WebRTC'nin doğal güvenliği (DTLS) kullanılarak uçtan uca şifrelenir. SDP ve ICE adaylarının manuel olarak değiş tokuşu bağlantı kurulumu içindir; gerçek veriler herhangi bir merkezi sunucudan geçmez. İlk SDP/ICE değişiminin güvenliği, kullanıcıların bu bilgiyi nasıl paylaştığına bağlıdır.
             </p>
+            <div className="mt-3 p-4 border-l-4 border-yellow-500 bg-yellow-50 dark:bg-yellow-900/30 rounded-md">
+                <div className="flex">
+                    <div className="flex-shrink-0">
+                        <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" aria-hidden="true" />
+                    </div>
+                    <div className="ml-3">
+                        <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                            <strong>Bağlanabilirlik Notu (STUN/TURN Sunucuları):</strong><br />
+                            WebRTC, genel IP adresinizi keşfetmeye ve doğrudan P2P bağlantılarını kolaylaştırmaya yardımcı olmak için STUN sunucularını (Cryptoshare'in yapılandırıldığı gibi) kullanır. Ancak bazen, kısıtlayıcı ağ yapılandırmaları (karmaşık NAT'lar veya güvenlik duvarları gibi) nedeniyle STUN tek başına yeterli olmayabilir.
+                            Bu gibi durumlarda, trafiği yönlendirmek için bir TURN sunucusu gerekir. Kalıcı bağlantı hataları (örneğin, "ICE failed" veya durumun "Bağlanıyor"da takılı kalması) yaşıyorsanız, bu durum ağ ortamınızdan kaynaklanıyor olabilir.
+                            Cryptoshare, yapılandırılmışlarsa TURN sunucularını kullanmaya hazırdır, ancak kendisi bir tane sağlamaz. Tüm ağ türlerinde güvenilir bağlantılar için, halka açık veya kendi barındırdığınız bir TURN sunucusunu kullanmak gerekebilir.
+                        </p>
+                    </div>
+                </div>
+            </div>
             
             <h3 className="text-xl font-semibold mt-4 mb-2">5. Bağlantıyı Kesme</h3>
             <p>
@@ -215,3 +245,5 @@ export default function AboutPage() {
     </div>
   );
 }
+
+    
