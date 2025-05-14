@@ -1,22 +1,25 @@
 
-export type PeerConnectionState = 'disconnected' | 'connecting' | 'connected' | 'failed' | 'closed' | 'offer_generated' | 'answer_generated' | 'awaiting_answer' | 'awaiting_offer';
-
-// SignalingMessage is no longer needed for Firebase-based signaling.
-// Manual exchange will primarily deal with SDP strings and ICE candidate objects.
+export type PeerConnectionState = 
+  | 'disconnected'       // Başlangıç durumu, bağlantı yok veya kesildi/başarısız oldu ve sıfırlandı.
+  | 'offer_generated'    // Başlatıcı: Teklif (Offer SDP) paylaşıma hazır.
+  | 'answer_generated'   // Misafir: Yanıt (Answer SDP) paylaşıma hazır.
+  | 'connecting'         // Aktif olarak bağlantı kurulmaya çalışılıyor (SDP'ler değiş tokuş edildi, ICE adayları işleniyor).
+  | 'connected'          // P2P bağlantısı ve veri kanalı aktif.
+  | 'failed';            // Bağlantı kurma denemesi başarısız oldu.
 
 export interface FileMetadata {
   id: string;
   name: string;
   size: number;
   type?: string; // MIME type
-  fromPeer: boolean; // Added to distinguish in UI
+  fromPeer: boolean; 
 }
 
 export interface FileChunk {
   fileId: string;
   chunkNumber: number;
   totalChunks: number;
-  data: string | ArrayBuffer; // string for base64, ArrayBuffer for binary
+  data: string | ArrayBuffer; 
   isLast: boolean;
 }
 
@@ -46,9 +49,9 @@ export interface TransferActivityFile {
   status: 'pending_approval' | 'transferring' | 'transferred' | 'rejected' | 'error' | 'pending_send' | 'waiting_approval';
   progress?: number;
   type: 'incoming' | 'outgoing';
-  file?: File; // For outgoing files
-  fromPeer?: boolean; // For incoming files
-  chunks?: ArrayBuffer[]; // For reassembling incoming files
-  receivedChunks?: number; // For reassembling incoming files
-  totalChunks?: number; // For reassembling incoming files
+  file?: File; 
+  fromPeer?: boolean; 
+  chunks?: ArrayBuffer[]; 
+  receivedChunks?: number; 
+  totalChunks?: number; 
 }
