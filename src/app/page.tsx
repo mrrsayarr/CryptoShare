@@ -8,7 +8,7 @@ import { DataTransfer } from '@/components/cryptoshare/DataTransfer';
 import { Messaging } from '@/components/cryptoshare/Messaging';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Shield, FileUp, Send, MessageCircle } from 'lucide-react';
+import { ShieldCheck, FileUp, Send, MessageCircle } from 'lucide-react';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import type { 
   PeerConnectionState, 
@@ -22,7 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function CryptosharePage() {
   const [appWebRTCState, setAppWebRTCState] = useState<PeerConnectionState>('disconnected');
-  const [sessionKey, setSessionKey] = useState<string | null>(null); // For initiator to display
+  const [sessionKey, setSessionKey] = useState<string | null>(null);
   
   const [mounted, setMounted] = useState(false);
   const { toast } = useToast();
@@ -44,14 +44,17 @@ export default function CryptosharePage() {
     if (typeof details === 'object' && details?.sessionKey) {
       setSessionKey(details.sessionKey);
     } else if (newState === 'disconnected' || newState === 'failed') {
-      setSessionKey(null); // Clear session key on disconnect or failure
+      setSessionKey(null); 
     }
 
     if (newState === 'failed') {
-        toast({ title: "Bağlantı Başarısız Oldu", description: (typeof details === 'string' ? details : "P2P bağlantısı kurulamadı.") || "P2P bağlantısı kurulamadı.", variant: "destructive"});
+        toast({ title: "Connection Failed", description: (typeof details === 'string' ? details : "P2P connection could not be established.") || "P2P connection could not be established.", variant: "destructive"});
     }
     if (newState === 'disconnected' && ['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session'].includes(appWebRTCStateRef.current)) { 
-        toast({ title: "Bağlantı Kesildi", description: (typeof details === 'string' ? details : "P2P bağlantısı kapandı.") || "P2P bağlantısı kapandı."});
+        toast({ title: "Disconnected", description: (typeof details === 'string' ? details : "P2P connection closed.") || "P2P connection closed."});
+    }
+    if (newState === 'connected') {
+      toast({ title: "Connected!", description: "Secure P2P connection established.", className: "bg-green-600 text-white dark:bg-green-700 dark:text-primary-foreground" });
     }
   }, [toast]);
 
@@ -61,7 +64,7 @@ export default function CryptosharePage() {
 
   const handleDataSnippetReceived = useCallback((snippet: { content: string; type: 'received'; timestamp: Date }) => {
     setDataSnippets(prev => [{ ...snippet, id: `data-${Date.now()}-${Math.random()}` }, ...prev].slice(0, 10));
-    toast({ title: "Veri Alındı", description: "Bir veri parçacığı alındı." });
+    toast({ title: "Data Received", description: "A data snippet has been received." });
   }, [toast]);
 
   const handleFileMetadataReceived = useCallback((metadata: FileMetadata & { fromPeer: boolean }) => {
@@ -74,17 +77,17 @@ export default function CryptosharePage() {
       fromPeer: true,
       progress: 0,
     }, ...prev].slice(0, 5));
-    toast({ title: "Gelen Dosya", description: `Dosya alma isteği: ${metadata.name}` });
+    toast({ title: "Incoming File", description: `File transfer request: ${metadata.name}` });
   }, [toast]);
 
   const handleFileApprovedByPeer = useCallback((fileId: string) => {
     setFileActivities(prev => prev.map(f => f.id === fileId && f.type === 'outgoing' ? { ...f, status: 'transferring' } : f));
-     toast({ title: "Dosya Onaylandı", description: "Eşiniz dosya aktarımınızı onayladı." });
+     toast({ title: "File Approved", description: "Your peer approved the file transfer." });
   }, [toast]);
 
   const handleFileRejectedByPeer = useCallback((fileId: string) => {
     setFileActivities(prev => prev.map(f => f.id === fileId && f.type === 'outgoing' ? { ...f, status: 'rejected' } : f));
-    toast({ title: "Dosya Reddedildi", description: "Eşiniz dosya aktarımınızı reddetti.", variant: "destructive" });
+    toast({ title: "File Rejected", description: "Your peer rejected the file transfer.", variant: "destructive" });
   }, [toast]);
   
   const handleFileChunkReceived = useCallback((chunk: FileChunk) => {
@@ -104,7 +107,7 @@ export default function CryptosharePage() {
                 bufferData = bytes.buffer;
              } catch (e) {
                 console.error("Error decoding base64 chunk data:", e);
-                toast({ title: "Dosya Aktarım Hatası", description: `${activity.name} için veri bloğu çözülürken hata oluştu.`, variant: "destructive" });
+                toast({ title: "File Transfer Error", description: `Error decoding data chunk for ${activity.name}.`, variant: "destructive" });
                 return { ...activity, status: 'error' };
              }
           } else { 
@@ -131,7 +134,7 @@ export default function CryptosharePage() {
             URL.revokeObjectURL(url);
             
             delete receivedFileChunks.current[chunk.fileId];
-            toast({ title: "Dosya Alındı", description: `${activity.name} indirildi.` });
+            toast({ title: "File Received", description: `${activity.name} has been downloaded.` });
             return { ...activity, progress: 100, status: 'transferred' };
           }
           return { ...activity, progress: newProgress, status: 'transferring' };
@@ -151,12 +154,17 @@ export default function CryptosharePage() {
     onFileChunkReceived: handleFileChunkReceived,
   });
 
+  const stableDisconnectRef = useRef(webRTC.disconnect);
+  useEffect(() => {
+    stableDisconnectRef.current = webRTC.disconnect;
+  }, [webRTC.disconnect]);
+
   useEffect(() => {
     setMounted(true);
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       if (['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session'].includes(appWebRTCStateRef.current)) {
         event.preventDefault();
-        event.returnValue = '';
+        event.returnValue = 'A P2P session is active. Are you sure you want to leave?';
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -165,10 +173,10 @@ export default function CryptosharePage() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       if (['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session'].includes(appWebRTCStateRef.current)) {
         console.log(`CryptosharePage: Cleanup on unmount/navigation. Current state: ${appWebRTCStateRef.current}. Disconnecting WebRTC.`);
-        webRTC.disconnect(); 
+        stableDisconnectRef.current(); 
       }
     };
-  }, [webRTC.disconnect]);
+  }, []);
 
 
   const handleCreateSession = useCallback(() => {
@@ -257,14 +265,13 @@ export default function CryptosharePage() {
         reader.onload = (e) => {
           if (e.target?.result && appWebRTCStateRef.current === 'connected') {
             const chunkData = e.target.result as ArrayBuffer;
-            // Convert ArrayBuffer to base64 string for JSON compatibility
             const base64ChunkData = btoa(new Uint8Array(chunkData).reduce((data, byte) => data + String.fromCharCode(byte), ''));
 
             webRTC.sendFileChunk({
               fileId: activity.id,
               chunkNumber,
               totalChunks,
-              data: base64ChunkData, // Send base64 string
+              data: base64ChunkData,
               isLast: chunkNumber === totalChunks - 1,
             });
             
@@ -281,7 +288,7 @@ export default function CryptosharePage() {
             if (chunkNumber < totalChunks) {
               setTimeout(readNextChunk, 10); 
             } else if (chunkNumber === totalChunks) {
-                toast({title: "Dosya Gönderildi", description: `${activity.name} başarıyla gönderildi.`});
+                toast({title: "File Sent", description: `${activity.name} has been successfully sent.`});
             }
           } else if (appWebRTCStateRef.current !== 'connected') {
              console.warn(`CryptosharePage: File transfer for ${activity.name} (onload) interrupted due to disconnect.`);
@@ -291,7 +298,7 @@ export default function CryptosharePage() {
         reader.onerror = (error) => {
             console.error("Error reading file chunk:", error);
             setFileActivities(prev => prev.map(f => f.id === activity.id ? {...f, status: 'error'} : f));
-            toast({title: "Dosya Gönderme Hatası", description: `${activity.name} gönderilirken hata oluştu.`, variant: "destructive"});
+            toast({title: "File Send Error", description: `Error sending ${activity.name}.`, variant: "destructive"});
         };
         readNextChunk();
       }
@@ -302,19 +309,19 @@ export default function CryptosharePage() {
   if (!mounted) {
     return (
       <div className="flex justify-center items-center h-screen">
-        <p>Cryptoshare Yükleniyor...</p>
+        <p className="text-lg text-muted-foreground animate-pulse">Cryptoshare Loading...</p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-center space-y-8">
-      <Card className="w-full max-w-2xl shadow-xl">
-        <CardHeader className="flex flex-row items-center space-x-3 pb-4">
-          <Shield className="h-8 w-8 text-primary" />
-          <CardTitle className="text-2xl font-bold">Güvenli P2P Bağlantısı (Supabase ile)</CardTitle>
+    <div className="flex flex-col items-center space-y-8 py-4 md:py-8">
+      <Card className="w-full max-w-2xl shadow-xl border-border/70">
+        <CardHeader className="flex flex-row items-center space-x-3 pb-4 border-b border-border/50">
+          <ShieldCheck className="h-8 w-8 text-primary" />
+          <CardTitle className="text-2xl font-bold">Secure P2P Connection</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 md:p-6">
           <ConnectionManager
             currentConnectionState={appWebRTCState} 
             sessionKey={sessionKey}
@@ -327,31 +334,31 @@ export default function CryptosharePage() {
 
       {appWebRTCState === 'connected' && (
         <Tabs defaultValue="file-transfer" className="w-full max-w-2xl">
-          <TabsList className="grid w-full grid-cols-3 bg-card border border-border shadow-sm">
-            <TabsTrigger value="file-transfer" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <FileUp className="mr-2 h-5 w-5" /> Dosya Aktarımı
+          <TabsList className="grid w-full grid-cols-3 bg-card border border-border shadow-md rounded-lg">
+            <TabsTrigger value="file-transfer" className="py-2.5 text-sm sm:text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md rounded-md">
+              <FileUp className="mr-1.5 h-5 w-5" /> File Transfer
             </TabsTrigger>
-            <TabsTrigger value="data-transfer" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <Send className="mr-2 h-5 w-5" /> Veri Aktarımı
+            <TabsTrigger value="data-transfer" className="py-2.5 text-sm sm:text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md rounded-md">
+              <Send className="mr-1.5 h-5 w-5" /> Data Transfer
             </TabsTrigger>
-            <TabsTrigger value="messaging" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <MessageCircle className="mr-2 h-5 w-5" /> Mesajlaşma
+            <TabsTrigger value="messaging" className="py-2.5 text-sm sm:text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md rounded-md">
+              <MessageCircle className="mr-1.5 h-5 w-5" /> Messaging
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="file-transfer">
+          <TabsContent value="file-transfer" className="mt-4">
             <FileTransfer 
               onSendFile={sendFile} 
               fileActivities={fileActivities}
               onFileAction={approveOrRejectIncomingFile} 
             />
           </TabsContent>
-          <TabsContent value="data-transfer">
+          <TabsContent value="data-transfer" className="mt-4">
             <DataTransfer 
               onSendData={sendDataSnippet}
               dataSnippets={dataSnippets}
             />
           </TabsContent>
-          <TabsContent value="messaging">
+          <TabsContent value="messaging" className="mt-4">
             <Messaging 
               onSendMessage={sendChatMessage}
               messages={chatMessages}

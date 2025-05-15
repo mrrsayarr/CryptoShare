@@ -1,7 +1,7 @@
 
 "use client";
 import Link from 'next/link';
-import { LockKeyhole, MessageSquareText, ShieldCheck, Moon, Sun, Info, ShieldQuestion } from 'lucide-react';
+import { LockKeyhole, MessageSquareText, Moon, Sun, Info, ShieldQuestion } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTheme } from "next-themes";
 import {
@@ -10,37 +10,73 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export function Navbar() {
   const { setTheme } = useTheme();
 
   return (
-    <nav className="bg-card border-b border-border shadow-sm">
+    <nav className="bg-card border-b border-border shadow-sm sticky top-0 z-50">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           <Link href="/" className="flex items-center space-x-2 text-xl font-semibold text-primary hover:text-primary/90 transition-colors">
             <LockKeyhole className="h-7 w-7" />
             <span>Cryptoshare</span>
           </Link>
-          <div className="flex items-center space-x-2 sm:space-x-4">
-            <Link href="/" passHref>
-              <Button variant="ghost" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground px-2 sm:px-3">
-                <MessageSquareText className="mr-0 sm:mr-2 h-5 w-5" />
-                <span className="hidden sm:inline">Share</span>
-              </Button>
-            </Link>
-            <Link href="/password-strength" passHref>
-              <Button variant="ghost" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground px-2 sm:px-3">
-                <ShieldQuestion className="mr-0 sm:mr-2 h-5 w-5" />
-                <span className="hidden sm:inline">Password Tool</span>
-              </Button>
-            </Link>
-            <Link href="/about" passHref>
-              <Button variant="ghost" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground px-2 sm:px-3">
-                <Info className="mr-0 sm:mr-2 h-5 w-5" />
-                <span className="hidden sm:inline">About</span>
-              </Button>
-            </Link>
+          <div className="flex items-center space-x-1 sm:space-x-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link href="/" passHref>
+                    <Button variant="ghost" size="icon" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground">
+                      <MessageSquareText className="h-5 w-5" />
+                      <span className="sr-only">Share</span>
+                    </Button>
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Share</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link href="/password-strength" passHref>
+                    <Button variant="ghost" size="icon" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground">
+                      <ShieldQuestion className="h-5 w-5" />
+                      <span className="sr-only">Password Tool</span>
+                    </Button>
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Password Tool</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link href="/about" passHref>
+                    <Button variant="ghost" size="icon" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground">
+                      <Info className="h-5 w-5" />
+                      <span className="sr-only">About</span>
+                    </Button>
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>About</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground">
