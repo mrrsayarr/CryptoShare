@@ -1,7 +1,7 @@
 
 "use client";
 import Link from 'next/link';
-import { LockKeyhole, MessageSquareText, ShieldCheck, Moon, Sun, Info } from 'lucide-react';
+import { LockKeyhole, MessageSquareText, ShieldCheck, Moon, Sun, Info, ShieldQuestion } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTheme } from "next-themes";
 import {
@@ -31,7 +31,7 @@ export function Navbar() {
             </Link>
             <Link href="/password-strength" passHref>
               <Button variant="ghost" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground px-2 sm:px-3">
-                <ShieldCheck className="mr-0 sm:mr-2 h-5 w-5" />
+                <ShieldQuestion className="mr-0 sm:mr-2 h-5 w-5" />
                 <span className="hidden sm:inline">Password Tool</span>
               </Button>
             </Link>
