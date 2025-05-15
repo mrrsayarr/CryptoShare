@@ -45,7 +45,7 @@ export function Navbar() {
               </Tooltip>
             </TooltipProvider>
 
-            <TooltipProvider>
+            {/* <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link href="/password-strength" passHref>
@@ -59,7 +59,7 @@ export function Navbar() {
                   <p>Password Tool</p>
                 </TooltipContent>
               </Tooltip>
-            </TooltipProvider>
+            </TooltipProvider> */}
 
             <TooltipProvider>
               <Tooltip>
