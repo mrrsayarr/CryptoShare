@@ -16,6 +16,9 @@ interface FileTransferProps {
   onFileAction: (fileId: string, approved: boolean) => void;
 }
 
+const FILE_SIZE_LIMIT = 2 * 1024 * 1024 * 1024; // 2GB
+const FILE_SIZE_LIMIT_MB_GB = "2GB";
+
 export function FileTransfer({ onSendFile, fileActivities, onFileAction }: FileTransferProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isFileSendingUI, setIsFileSendingUI] = useState(false);
@@ -25,10 +28,10 @@ export function FileTransfer({ onSendFile, fileActivities, onFileAction }: FileT
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
       const file = event.target.files[0];
-      if (file.size > 500 * 1024 * 1024) { // 500MB limit
+      if (file.size > FILE_SIZE_LIMIT) { 
         toast({
           title: 'File Too Large',
-          description: 'Maximum file size is 500MB.',
+          description: `Maximum file size is ${FILE_SIZE_LIMIT_MB_GB}.`,
           variant: 'destructive',
         });
         setSelectedFile(null);
@@ -82,7 +85,7 @@ export function FileTransfer({ onSendFile, fileActivities, onFileAction }: FileT
     <Card className="shadow-xl border-border/60">
       <CardHeader className="border-b border-border/50 pb-4">
         <CardTitle className="flex items-center text-xl font-semibold"><UploadCloud className="mr-3 h-7 w-7 text-primary" /> Secure File Transfer</CardTitle>
-        <CardDescription className="text-sm text-muted-foreground pt-1">Select a file (up to 500MB) to send securely to your peer.</CardDescription>
+        <CardDescription className="text-sm text-muted-foreground pt-1">Select a file (up to {FILE_SIZE_LIMIT_MB_GB}) to send securely to your peer.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6 pt-6">
         <div className="p-4 border border-dashed border-border rounded-lg bg-background hover:border-primary/70 transition-colors">
@@ -171,8 +174,9 @@ export function FileTransfer({ onSendFile, fileActivities, onFileAction }: FileT
         )}
       </CardContent>
       <CardFooter className="border-t border-border/50 pt-4">
-        <p className="text-xs text-muted-foreground text-center w-full">Files are end-to-end encrypted via WebRTC. Max file size: 500MB.</p>
+        <p className="text-xs text-muted-foreground text-center w-full">Files are end-to-end encrypted via WebRTC. Max file size: {FILE_SIZE_LIMIT_MB_GB}.</p>
       </CardFooter>
     </Card>
   );
 }
+

@@ -7,7 +7,7 @@ Cryptoshare is a peer-to-peer (P2P) application designed for secure transfer of 
 
 *   **Peer-to-Peer (P2P) Communication**: Direct connection between users using WebRTC, minimizing server involvement for data transfer.
 *   **End-to-End Encryption**: All files, data, and messages are encrypted in transit using DTLS, inherent to WebRTC data channels.
-*   **File Transfer**: Securely send and receive files (up to 500MB) with a peer approval mechanism.
+*   **File Transfer**: Securely send and receive files (up to 2GB) with a peer approval mechanism.
 *   **Data Snippet Transfer**: Quickly send short text or JSON data.
 *   **Real-time Messaging**: Chat securely with your connected peer.
 *   **Supabase for Signaling**: Uses Supabase Realtime Database and Broadcast for exchanging connection metadata (offers, answers, ICE candidates) to establish the P2P link.
@@ -61,13 +61,13 @@ Cryptoshare requires a Supabase project for its signaling mechanism.
       );
       ```
    *   **Configure Row Level Security (RLS)**:
-      RLS is likely enabled by default. You need to create policies to allow the application (using the `anon` key) to interact with this table.
-      In the SQL Editor, run:
+      RLS is likely enabled by default for new tables. You need to create policies to allow the application (using the `anon` key) to interact with this table.
+      In the SQL Editor, run the following policies (or create them via the Supabase UI under Authentication > Policies):
       ```sql
-      -- Enable RLS if not already enabled (usually is by default for new tables)
+      -- Ensure RLS is enabled for the table (usually is by default)
       -- ALTER TABLE public.webrtc_sessions ENABLE ROW LEVEL SECURITY;
 
-      -- Allow anonymous users to read sessions (e.g., to fetch an offer)
+      -- Allow anonymous users to read sessions (e.g., for a guest to fetch an offer)
       CREATE POLICY "Allow public read access to webrtc_sessions"
       ON public.webrtc_sessions
       FOR SELECT
@@ -90,7 +90,7 @@ Cryptoshare requires a Supabase project for its signaling mechanism.
       USING (true)
       WITH CHECK (true);
       ```
-      **Note**: These are permissive policies for ease of setup. For a production environment, you should define more restrictive RLS policies based on your security requirements.
+      **Note**: These are permissive policies for ease of setup. For a production environment, you should define more restrictive RLS policies based on your security requirements (e.g., only allow a user to update a session they are part of, or only allow updating specific fields like `status` or `answer_sdp`).
    *   **Enable Realtime for the Table**:
       Go to "Database" -> "Replication" in your Supabase dashboard. Ensure that `public.webrtc_sessions` is listed and enabled for Realtime. This is crucial for broadcasting answers and ICE candidates.
 
@@ -138,7 +138,7 @@ The connection process is facilitated by Supabase for exchanging initial connect
 **2. Using the Features (Once Connected):**
 
    *   **File Transfer Tab**:
-      *   **Sending**: Click "Choose File", select the file (up to 500MB), and click "Send File". Your peer will receive a request to approve the transfer. Once they approve, the file will be sent directly.
+      *   **Sending**: Click "Choose File", select the file (up to 2GB), and click "Send File". Your peer will receive a request to approve the transfer. Once they approve, the file will be sent directly.
       *   **Receiving**: When your peer initiates a file transfer, it will appear in your "Transfer Activity" list with "Approve" and "Reject" buttons. Click "Approve" to start receiving the file directly from your peer. The file will be automatically downloaded once completed.
 
    *   **Data Transfer Tab**:
@@ -158,7 +158,14 @@ The connection process is facilitated by Supabase for exchanging initial connect
 
 *   **End-to-End Encryption**: All data transferred directly between peers (files, data snippets, messages) is encrypted end-to-end using DTLS (Datagram Transport Layer Security), which is a standard part of WebRTC.
 *   **Signaling Server (Supabase)**: Supabase is used *only* for the signaling process – that is, to help the two browsers find each other and exchange the initial metadata needed to establish the direct P2P connection. Your actual files, messages, and data snippets **do not** pass through Supabase servers during transfer once the P2P connection is active.
-*   **Session Key Security**: The security of the Session Key exchange is the responsibility of the users. Share it through a trusted channel. Once the key is used and the P2P connection is established, the key itself is no longer directly involved in the data transfer encryption.
+*   **Session Key Security**:
+    *   The security of the Session Key exchange is the responsibility of the users. Share it through a trusted channel.
+    *   The application includes basic client-side attempt limiting for joining sessions to deter casual brute-force attempts.
+    *   **For Production**:
+        *   Review and tighten Supabase Row Level Security (RLS) policies for the `webrtc_sessions` table.
+        *   Implement rate limiting on Supabase queries related to session key validation (e.g., using Supabase Edge Functions) to protect against direct database brute-force attacks.
+        *   Consider a mechanism to clean up stale or old sessions from the `webrtc_sessions` table.
+*   **No Server-Side Storage of Transferred Data**: Cryptoshare is designed so that actual shared files, messages, and data snippets are transferred P2P and are not stored on any intermediary server (including Supabase) after the connection is established.
 
 ## Connectivity (STUN/TURN Servers)
 

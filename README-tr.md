@@ -7,7 +7,7 @@ Cryptoshare, kullanıcıların tarayıcıları arasında doğrudan dosya, veri p
 
 *   **Eşler Arası (P2P) İletişim**: WebRTC kullanarak kullanıcılar arasında doğrudan bağlantı kurar, veri aktarımı için sunucu müdahalesini en aza indirir.
 *   **Uçtan Uca Şifreleme**: Tüm dosyalar, veriler ve mesajlar, WebRTC veri kanallarının doğal bir parçası olan DTLS kullanılarak aktarım sırasında şifrelenir.
-*   **Dosya Aktarımı**: Eş onay mekanizmasıyla dosyaları (en fazla 500MB) güvenli bir şekilde gönderin ve alın.
+*   **Dosya Aktarımı**: Eş onay mekanizmasıyla dosyaları (en fazla 2GB) güvenli bir şekilde gönderin ve alın.
 *   **Veri Parçacığı Aktarımı**: Kısa metin veya JSON verilerini hızla gönderin.
 *   **Gerçek Zamanlı Mesajlaşma**: Bağlı olduğunuz eşinizle güvenli bir şekilde sohbet edin.
 *   **Sinyalizasyon için Supabase**: P2P bağlantısını kurmak için bağlantı meta verilerinin (teklifler, yanıtlar, ICE adayları) değişimi için Supabase Gerçek Zamanlı Veritabanı ve Yayın (Broadcast) özelliklerini kullanır.
@@ -61,13 +61,13 @@ Cryptoshare, sinyalizasyon mekanizması için bir Supabase projesi gerektirir.
       );
       ```
    *   **Satır Düzeyinde Güvenlik (RLS) Yapılandırması**:
-      RLS büyük olasılıkla varsayılan olarak etkindir. Uygulamanızın (`anon` anahtarını kullanarak) bu tabloyla etkileşime girmesine izin vermek için politikalar oluşturmanız gerekir.
-      SQL Düzenleyicisi'nde çalıştırın:
+      RLS büyük olasılıkla yeni tablolar için varsayılan olarak etkindir. Uygulamanızın (`anon` anahtarını kullanarak) bu tabloyla etkileşime girmesine izin vermek için politikalar oluşturmanız gerekir.
+      SQL Düzenleyicisi'nde aşağıdaki politikaları çalıştırın (veya Supabase arayüzünden Authentication > Policies bölümünden oluşturun):
       ```sql
-      -- RLS zaten etkin değilse etkinleştirin (genellikle yeni tablolar için varsayılan olarak etkindir)
+      -- RLS'nin tablo için etkin olduğundan emin olun (genellikle varsayılan olarak etkindir)
       -- ALTER TABLE public.webrtc_sessions ENABLE ROW LEVEL SECURITY;
 
-      -- Anonim kullanıcıların oturumları okumasına izin ver (örn. bir teklifi almak için)
+      -- Anonim kullanıcıların oturumları okumasına izin ver (örn. misafirin bir teklifi almak için)
       CREATE POLICY "Allow public read access to webrtc_sessions"
       ON public.webrtc_sessions
       FOR SELECT
@@ -90,7 +90,7 @@ Cryptoshare, sinyalizasyon mekanizması için bir Supabase projesi gerektirir.
       USING (true)
       WITH CHECK (true);
       ```
-      **Not**: Bunlar kurulum kolaylığı için izin veren politikalardır. Bir üretim ortamı için güvenlik gereksinimlerinize göre daha kısıtlayıcı RLS politikaları tanımlamanız gerekir.
+      **Not**: Bunlar kurulum kolaylığı için izin veren politikalardır. Bir üretim ortamı için güvenlik gereksinimlerinize göre daha kısıtlayıcı RLS politikaları tanımlamanız gerekir (örn. bir kullanıcının yalnızca parçası olduğu bir oturumu güncellemesine izin vermek veya yalnızca `status` veya `answer_sdp` gibi belirli alanların güncellenmesine izin vermek).
    *   **Tablo için Gerçek Zamanlı (Realtime) Özelliğini Etkinleştirin**:
       Supabase panonuzda "Database" -> "Replication" bölümüne gidin. `public.webrtc_sessions` tablosunun listelendiğinden ve Gerçek Zamanlı için etkin olduğundan emin olun. Bu, yanıtların ve ICE adaylarının yayınlanması için kritik öneme sahiptir.
 
@@ -138,7 +138,7 @@ Bağlantı süreci, ilk bağlantı ayrıntılarının (Teklif/Yanıt SDP'leri ve
 **2. Özellikleri Kullanma (Bağlantı Kurulduktan Sonra):**
 
    *   **File Transfer (Dosya Aktarımı) Sekmesi**:
-      *   **Gönderme**: "Choose File" (Dosya Seç) düğmesine tıklayın, dosyayı seçin (en fazla 500MB) ve "Send File" (Dosya Gönder) düğmesine tıklayın. Eşiniz aktarımı onaylamak için bir istek alacaktır. Onayladıktan sonra dosya doğrudan gönderilecektir.
+      *   **Gönderme**: "Choose File" (Dosya Seç) düğmesine tıklayın, dosyayı seçin (en fazla 2GB) ve "Send File" (Dosya Gönder) düğmesine tıklayın. Eşiniz aktarımı onaylamak için bir istek alacaktır. Onayladıktan sonra dosya doğrudan gönderilecektir.
       *   **Alma**: Eşiniz bir dosya aktarımı başlattığında, "Transfer Activity" (Aktarım Etkinliği) listenizde "Approve" (Onayla) ve "Reject" (Reddet) düğmeleriyle görünecektir. Dosyayı doğrudan eşinizden almaya başlamak için "Approve" (Onayla) düğmesine tıklayın. Dosya tamamlandığında otomatik olarak indirilecektir.
 
    *   **Data Transfer (Veri Aktarımı) Sekmesi**:
@@ -158,7 +158,14 @@ Bağlantı süreci, ilk bağlantı ayrıntılarının (Teklif/Yanıt SDP'leri ve
 
 *   **Uçtan Uca Şifreleme**: Eşler arasında doğrudan aktarılan tüm veriler (dosyalar, veri parçacıkları, mesajlar), WebRTC'nin standart bir parçası olan DTLS (Datagram Taşıma Katmanı Güvenliği) kullanılarak uçtan uca şifrelenir.
 *   **Sinyalizasyon Sunucusu (Supabase)**: Supabase *yalnızca* sinyalizasyon süreci için kullanılır – yani, iki tarayıcının birbirini bulmasına ve doğrudan P2P bağlantısını kurmak için gereken ilk meta verileri değiş tokuş etmesine yardımcı olmak için. Gerçek dosyalarınız, mesajlarınız ve veri parçacıklarınız P2P bağlantısı aktif olduktan sonra aktarım sırasında Supabase sunucularından **geçmez**.
-*   **Oturum Anahtarı Güvenliği**: Oturum Anahtarı değişiminin güvenliği kullanıcıların sorumluluğundadır. Güvenilir bir kanal aracılığıyla paylaşın. Anahtar kullanılıp P2P bağlantısı kurulduktan sonra, anahtarın kendisi veri aktarım şifrelemesinde doğrudan yer almaz.
+*   **Oturum Anahtarı Güvenliği**:
+    *   Oturum Anahtarı değişiminin güvenliği kullanıcıların sorumluluğundadır. Güvenilir bir kanal aracılığıyla paylaşın.
+    *   Uygulama, oturumlara katılmak için yapılan basit kaba kuvvet denemelerini caydırmak amacıyla temel istemci tarafı deneme sınırlaması içerir.
+    *   **Üretim Ortamı İçin**:
+        *   `webrtc_sessions` tablosu için Supabase Satır Düzeyinde Güvenlik (RLS) politikalarını gözden geçirin ve sıkılaştırın.
+        *   Oturum anahtarı doğrulamasıyla ilgili Supabase sorgularında (örn. Supabase Edge Fonksiyonları aracılığıyla) hız sınırlaması uygulayarak doğrudan veritabanı kaba kuvvet saldırılarına karşı koruma sağlayın.
+        *   `webrtc_sessions` tablosundaki eski veya kullanılmayan oturumları temizlemek için bir mekanizma düşünün.
+*   **Aktarılan Verilerin Sunucu Tarafında Saklanmaması**: Cryptoshare, paylaşılan gerçek dosyaların, mesajların ve veri parçacıklarının P2P olarak aktarılması ve bağlantı kurulduktan sonra herhangi bir aracı sunucuda (Supabase dahil) saklanmaması için tasarlanmıştır.
 
 ## Bağlanabilirlik (STUN/TURN Sunucuları)
 
