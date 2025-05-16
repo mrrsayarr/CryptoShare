@@ -10,11 +10,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ShieldCheck, FileUp, Send, MessageCircle } from 'lucide-react';
 import { useWebRTC } from '@/hooks/useWebRTC';
-import type { 
-  PeerConnectionState, 
-  ChatMessage, 
-  DataSnippet, 
-  FileMetadata, 
+import type {
+  PeerConnectionState,
+  ChatMessage,
+  DataSnippet,
+  FileMetadata,
   FileChunk,
   TransferActivityFile
 } from '@/types/cryptoshare';
@@ -23,7 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 export default function CryptosharePage() {
   const [appWebRTCState, setAppWebRTCState] = useState<PeerConnectionState>('disconnected');
   const [sessionKey, setSessionKey] = useState<string | null>(null);
-  
+
   const [mounted, setMounted] = useState(false);
   const { toast } = useToast();
 
@@ -44,13 +44,13 @@ export default function CryptosharePage() {
     if (typeof details === 'object' && details?.sessionKey) {
       setSessionKey(details.sessionKey);
     } else if (newState === 'disconnected' || newState === 'failed') {
-      setSessionKey(null); 
+      setSessionKey(null);
     }
 
     if (newState === 'failed') {
         toast({ title: "Connection Failed", description: (typeof details === 'string' ? details : "P2P connection could not be established.") || "P2P connection could not be established.", variant: "destructive"});
     }
-    if (newState === 'disconnected' && ['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session'].includes(appWebRTCStateRef.current)) { 
+    if (newState === 'disconnected' && ['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session'].includes(appWebRTCStateRef.current)) {
         toast({ title: "Disconnected", description: (typeof details === 'string' ? details : "P2P connection closed.") || "P2P connection closed."});
     }
     if (newState === 'connected') {
@@ -89,16 +89,16 @@ export default function CryptosharePage() {
     setFileActivities(prev => prev.map(f => f.id === fileId && f.type === 'outgoing' ? { ...f, status: 'rejected' } : f));
     toast({ title: "File Rejected", description: "Your peer rejected the file transfer.", variant: "destructive" });
   }, [toast]);
-  
+
   const handleFileChunkReceived = useCallback((chunk: FileChunk) => {
     setFileActivities(prevActivities => {
       return prevActivities.map(activity => {
-        if (activity.id === chunk.fileId && activity.type === 'incoming' && activity.status !== 'transferred') {
+        if (activity.id === chunk.fileId && activity.type === 'incoming' && activity.status !== 'transferred' && activity.status !== 'error') {
           if (!receivedFileChunks.current[chunk.fileId]) {
             receivedFileChunks.current[chunk.fileId] = [];
           }
           let bufferData: ArrayBuffer;
-          if (typeof chunk.data === 'string') { 
+          if (typeof chunk.data === 'string') { // Data is base64 string
              try {
                 const binaryString = window.atob(chunk.data);
                 const len = binaryString.length;
@@ -110,20 +110,26 @@ export default function CryptosharePage() {
                 toast({ title: "File Transfer Error", description: `Error decoding data chunk for ${activity.name}.`, variant: "destructive" });
                 return { ...activity, status: 'error' };
              }
-          } else { 
-            bufferData = chunk.data; 
+          } else { // Data is ArrayBuffer (should not happen with current sendFileChunk)
+            bufferData = chunk.data;
           }
 
           receivedFileChunks.current[chunk.fileId][chunk.chunkNumber] = bufferData;
           const newProgress = Math.round(((chunk.chunkNumber + 1) / chunk.totalChunks) * 100);
 
           if (chunk.isLast) {
+            // Prevent multiple downloads if somehow called again for an already transferred file
+            if (activity.status === 'transferred') return activity;
+
             const fileBlobs = receivedFileChunks.current[chunk.fileId]
-                .filter(buffer => buffer) 
+                .filter(buffer => buffer)
                 .map(buffer => new Blob([buffer]));
-            
-            const fullFileBlob = new Blob(fileBlobs, {type: activity.name.endsWith('.txt') ? 'text/plain' : activity.name.endsWith('.json') ? 'application/json' : undefined}); 
-            
+
+            const mimeType = activity.name.endsWith('.txt') ? 'text/plain' :
+                             activity.name.endsWith('.json') ? 'application/json' :
+                             undefined; // Or derive from FileMetadata if available and reliable
+            const fullFileBlob = new Blob(fileBlobs, {type: mimeType});
+
             const url = URL.createObjectURL(fullFileBlob);
             const a = document.createElement('a');
             a.href = url;
@@ -132,10 +138,10 @@ export default function CryptosharePage() {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            
+
             delete receivedFileChunks.current[chunk.fileId];
             toast({ title: "File Received", description: `${activity.name} has been downloaded.` });
-            return { ...activity, progress: 100, status: 'transferred' };
+            return { ...activity, progress: 100, status: 'transferred', blob: fullFileBlob };
           }
           return { ...activity, progress: newProgress, status: 'transferring' };
         }
@@ -149,8 +155,8 @@ export default function CryptosharePage() {
     onMessageReceived: handleMessageReceived,
     onDataSnippetReceived: handleDataSnippetReceived,
     onFileMetadataReceived: handleFileMetadataReceived,
-    onFileApproved: handleFileApprovedByPeer, 
-    onFileRejected: handleFileRejectedByPeer, 
+    onFileApproved: handleFileApprovedByPeer,
+    onFileRejected: handleFileRejectedByPeer,
     onFileChunkReceived: handleFileChunkReceived,
   });
 
@@ -162,7 +168,7 @@ export default function CryptosharePage() {
   useEffect(() => {
     setMounted(true);
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session', 'offer_generated', 'answer_generated'].includes(appWebRTCStateRef.current)) {
+      if (['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session'].includes(appWebRTCStateRef.current)) {
         event.preventDefault();
         event.returnValue = 'A P2P session is active. Are you sure you want to leave?';
       }
@@ -171,35 +177,45 @@ export default function CryptosharePage() {
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      if (['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session', 'offer_generated', 'answer_generated'].includes(appWebRTCStateRef.current)) {
+      if (['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session'].includes(appWebRTCStateRef.current)) {
         console.log(`CryptosharePage: Cleanup on unmount/navigation. Current state: ${appWebRTCStateRef.current}. Disconnecting WebRTC.`);
-        stableDisconnectRef.current(); 
+        stableDisconnectRef.current();
       }
     };
   }, []);
 
 
   const handleCreateSession = useCallback(() => {
+    if (!webRTC.supabase) {
+        toast({title: "Supabase Error", description: "Supabase client is not configured. Please check .env and restart.", variant: "destructive"});
+        setAppWebRTCState('failed');
+        return;
+    }
     console.log("CryptosharePage: User wants to create a new session.");
-    receivedFileChunks.current = {}; 
+    receivedFileChunks.current = {};
     setChatMessages([]);
     setDataSnippets([]);
     setFileActivities([]);
     webRTC.createSession();
-  }, [webRTC]);
+  }, [webRTC, toast]);
 
   const handleJoinSession = useCallback((key: string) => {
+     if (!webRTC.supabase) {
+        toast({title: "Supabase Error", description: "Supabase client is not configured. Please check .env and restart.", variant: "destructive"});
+        setAppWebRTCState('failed');
+        return;
+    }
     console.log(`CryptosharePage: User wants to join session with key: ${key}`);
     receivedFileChunks.current = {};
     setChatMessages([]);
     setDataSnippets([]);
     setFileActivities([]);
     webRTC.joinSession(key);
-  }, [webRTC]);
-  
+  }, [webRTC, toast]);
+
   const handleDisconnectFromManager = useCallback(() => {
     console.log("CryptosharePage: User initiated disconnect from ConnectionManager.");
-    webRTC.disconnect(); 
+    webRTC.disconnect();
   }, [webRTC]);
 
   const sendChatMessage = useCallback((text: string) => {
@@ -215,21 +231,21 @@ export default function CryptosharePage() {
   const sendFile = useCallback((file: File) => {
     const fileId = `file-${Date.now()}-${Math.random().toString(36).substring(2,9)}`;
     const metadata: Omit<FileMetadata, 'fromPeer'> = { id: fileId, name: file.name, size: file.size, type: file.type };
-    
+
     setFileActivities(prev => [{
       id: fileId,
       name: file.name,
       size: file.size,
-      status: 'waiting_approval', 
+      status: 'waiting_approval',
       type: 'outgoing',
       progress: 0,
-      file: file, 
+      file: file,
     }, ...prev].slice(0,5));
-    
+
     webRTC.sendFileMetadata(metadata);
   }, [webRTC]);
 
-  const approveOrRejectIncomingFile = useCallback((fileId: string, approved: boolean) => { 
+  const approveOrRejectIncomingFile = useCallback((fileId: string, approved: boolean) => {
      webRTC.sendFileApproval(fileId, approved);
      if (approved) {
         setFileActivities(prev => prev.map(f => f.id === fileId && f.type === 'incoming' ? {...f, status: 'transferring'} : f));
@@ -238,22 +254,45 @@ export default function CryptosharePage() {
      }
   }, [webRTC]);
 
+  const handleRedownloadReceivedFile = useCallback((fileId: string) => {
+    const activity = fileActivities.find(f => f.id === fileId && f.type === 'incoming' && f.status === 'transferred' && f.blob);
+    if (activity && activity.blob) {
+      const url = URL.createObjectURL(activity.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = activity.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: "File Downloaded", description: `${activity.name} has been downloaded again.` });
+    } else {
+      toast({ title: "Download Failed", description: "Could not find the file data to re-download.", variant: "destructive" });
+    }
+  }, [fileActivities, toast]);
+
   useEffect(() => {
     fileActivities.forEach(activity => {
-      if (activity.type === 'outgoing' && activity.status === 'transferring' && activity.file && activity.progress === 0) { 
+      if (activity.type === 'outgoing' && activity.status === 'transferring' && activity.file && activity.progress !== 100) {
         const file = activity.file;
-        const CHUNK_SIZE = 64 * 1024; 
+        const CHUNK_SIZE = 64 * 1024;
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-        let chunkNumber = 0;
-        const reader = new FileReader();
-        
-        console.log(`CryptosharePage: Starting to send chunks for file ${activity.name}, ID: ${activity.id}`);
+        let chunkNumber = Math.floor((activity.progress || 0) / 100 * totalChunks); // Resume logic (basic)
 
-        function readNextChunk() {
+        console.log(`CryptosharePage: Starting/Resuming to send chunks for file ${activity.name}, ID: ${activity.id}, starting at chunk ${chunkNumber}`);
+
+        const reader = new FileReader();
+
+        async function readNextChunk() {
           if (chunkNumber >= totalChunks || appWebRTCStateRef.current !== 'connected') {
             if (appWebRTCStateRef.current !== 'connected' && chunkNumber < totalChunks) {
                 console.warn(`CryptosharePage: File transfer for ${activity.name} interrupted due to disconnect.`);
-                setFileActivities(prev => prev.map(f => f.id === activity.id ? {...f, status: 'error', progress: undefined} : f)); 
+                setFileActivities(prev => prev.map(f => f.id === activity.id ? {...f, status: 'error', progress: undefined} : f));
+            } else if (chunkNumber >= totalChunks && activity.status !== 'transferred') {
+                // All chunks processed, ensure status is updated
+                console.log(`CryptosharePage: All chunks for ${activity.name} processed for sending.`);
+                setFileActivities(prev => prev.map(f => f.id === activity.id ? {...f, status: 'transferred', progress: 100} : f));
+                toast({title: "File Sent", description: `${activity.name} has been successfully sent.`});
             }
             return;
           }
@@ -262,33 +301,44 @@ export default function CryptosharePage() {
           reader.readAsArrayBuffer(slice);
         }
 
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
           if (e.target?.result && appWebRTCStateRef.current === 'connected') {
             const chunkData = e.target.result as ArrayBuffer;
+            // Convert ArrayBuffer to base64 string for sending
             const base64ChunkData = btoa(new Uint8Array(chunkData).reduce((data, byte) => data + String.fromCharCode(byte), ''));
 
-            webRTC.sendFileChunk({
+            const chunkPayload: FileChunk = {
               fileId: activity.id,
               chunkNumber,
               totalChunks,
-              data: base64ChunkData,
+              data: base64ChunkData, // Send base64 string
               isLast: chunkNumber === totalChunks - 1,
-            });
-            
-            const progress = Math.round(((chunkNumber + 1) / totalChunks) * 100);
-            setFileActivities(prev => prev.map(f => {
-                if (f.id === activity.id) {
-                    const isLastChunkSent = chunkNumber === totalChunks - 1;
-                    return {...f, progress, status: isLastChunkSent ? 'transferred' : 'transferring'};
-                }
-                return f;
-            }));
-            
-            chunkNumber++;
-            if (chunkNumber < totalChunks) {
-              setTimeout(readNextChunk, 10); 
-            } else if (chunkNumber === totalChunks) {
-                toast({title: "File Sent", description: `${activity.name} has been successfully sent.`});
+            };
+
+            try {
+              await webRTC.sendFileChunk(chunkPayload);
+
+              const progress = Math.round(((chunkNumber + 1) / totalChunks) * 100);
+              setFileActivities(prev => prev.map(f => {
+                  if (f.id === activity.id) {
+                      const isLastChunkSent = chunkNumber === totalChunks - 1;
+                      return {...f, progress, status: isLastChunkSent ? 'transferred' : 'transferring'};
+                  }
+                  return f;
+              }));
+
+              chunkNumber++;
+              if (chunkNumber < totalChunks) {
+                setTimeout(readNextChunk, 0); // Yield to event loop, effectively
+              } else { // chunkNumber === totalChunks means all chunks are sent
+                  toast({title: "File Sent", description: `${activity.name} has been successfully sent.`});
+                  // Ensure status is explicitly set to transferred here for the sender
+                  setFileActivities(prev => prev.map(f => f.id === activity.id ? {...f, status: 'transferred', progress: 100} : f));
+              }
+            } catch (sendError: any) {
+              console.error(`Error sending file chunk for ${activity.name}:`, sendError);
+              setFileActivities(prev => prev.map(f => f.id === activity.id ? {...f, status: 'error'} : f));
+              toast({title: "File Send Error", description: `Error sending ${activity.name}: ${sendError.message}`, variant: "destructive"});
             }
           } else if (appWebRTCStateRef.current !== 'connected') {
              console.warn(`CryptosharePage: File transfer for ${activity.name} (onload) interrupted due to disconnect.`);
@@ -298,7 +348,7 @@ export default function CryptosharePage() {
         reader.onerror = (error) => {
             console.error("Error reading file chunk:", error);
             setFileActivities(prev => prev.map(f => f.id === activity.id ? {...f, status: 'error'} : f));
-            toast({title: "File Send Error", description: `Error sending ${activity.name}.`, variant: "destructive"});
+            toast({title: "File Send Error", description: `Error reading ${activity.name} for sending.`, variant: "destructive"});
         };
         readNextChunk();
       }
@@ -323,11 +373,11 @@ export default function CryptosharePage() {
         </CardHeader>
         <CardContent className="p-4 md:p-6">
           <ConnectionManager
-            currentConnectionState={appWebRTCState} 
+            currentConnectionState={appWebRTCState}
             sessionKey={sessionKey}
             onCreateSession={handleCreateSession}
             onJoinSession={handleJoinSession}
-            onDisconnect={handleDisconnectFromManager} 
+            onDisconnect={handleDisconnectFromManager}
           />
         </CardContent>
       </Card>
@@ -346,20 +396,21 @@ export default function CryptosharePage() {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="file-transfer" className="mt-4">
-            <FileTransfer 
-              onSendFile={sendFile} 
+            <FileTransfer
+              onSendFile={sendFile}
               fileActivities={fileActivities}
-              onFileAction={approveOrRejectIncomingFile} 
+              onFileAction={approveOrRejectIncomingFile}
+              onRedownloadReceivedFile={handleRedownloadReceivedFile}
             />
           </TabsContent>
           <TabsContent value="data-transfer" className="mt-4">
-            <DataTransfer 
+            <DataTransfer
               onSendData={sendDataSnippet}
               dataSnippets={dataSnippets}
             />
           </TabsContent>
           <TabsContent value="messaging" className="mt-4">
-            <Messaging 
+            <Messaging
               onSendMessage={sendChatMessage}
               messages={chatMessages}
             />

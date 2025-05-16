@@ -7,19 +7,20 @@ import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { UploadCloud, CheckCircle, XCircle, AlertTriangle, Loader2, Download, Hourglass, FileText, ArrowUpCircle, ArrowDownCircle, Send } from 'lucide-react';
+import { UploadCloud, CheckCircle, XCircle, AlertTriangle, Loader2, Download, Hourglass, FileText, ArrowUpCircle, ArrowDownCircle, Send, RefreshCw } from 'lucide-react';
 import type { TransferActivityFile } from '@/types/cryptoshare';
 
 interface FileTransferProps {
   onSendFile: (file: File) => void;
   fileActivities: TransferActivityFile[];
   onFileAction: (fileId: string, approved: boolean) => void;
+  onRedownloadReceivedFile: (fileId: string) => void;
 }
 
 const FILE_SIZE_LIMIT = 2 * 1024 * 1024 * 1024; // 2GB
 const FILE_SIZE_LIMIT_MB_GB = "2GB";
 
-export function FileTransfer({ onSendFile, fileActivities, onFileAction }: FileTransferProps) {
+export function FileTransfer({ onSendFile, fileActivities, onFileAction, onRedownloadReceivedFile }: FileTransferProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isFileSendingUI, setIsFileSendingUI] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -28,7 +29,7 @@ export function FileTransfer({ onSendFile, fileActivities, onFileAction }: FileT
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
       const file = event.target.files[0];
-      if (file.size > FILE_SIZE_LIMIT) { 
+      if (file.size > FILE_SIZE_LIMIT) {
         toast({
           title: 'File Too Large',
           description: `Maximum file size is ${FILE_SIZE_LIMIT_MB_GB}.`,
@@ -49,10 +50,10 @@ export function FileTransfer({ onSendFile, fileActivities, onFileAction }: FileT
     }
     setIsFileSendingUI(true);
     onSendFile(selectedFile);
-    toast({ title: "Sending File Request", description: `Requesting to send ${selectedFile.name}. Waiting for peer approval.` });
+    // Toast for waiting for approval is handled by parent logic (metadata sent)
     setSelectedFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
-    setTimeout(() => setIsFileSendingUI(false), 1000);
+    setTimeout(() => setIsFileSendingUI(false), 1000); // UI state reset
   };
 
   const formatFileSize = (bytes: number) => {
@@ -74,9 +75,9 @@ export function FileTransfer({ onSendFile, fileActivities, onFileAction }: FileT
       default: return <FileText className="h-5 w-5 text-muted-foreground" />;
     }
   };
-  
+
   const getTransferDirectionIcon = (type: TransferActivityFile['type']) => {
-    return type === 'incoming' 
+    return type === 'incoming'
       ? <ArrowDownCircle className="h-5 w-5 text-blue-500" title="Incoming" />
       : <ArrowUpCircle className="h-5 w-5 text-green-500" title="Outgoing" />;
   }
@@ -100,7 +101,7 @@ export function FileTransfer({ onSendFile, fileActivities, onFileAction }: FileT
             />
             <Button onClick={handleSendFileClick} disabled={!selectedFile || isFileSendingUI} className="w-full sm:w-auto px-6 py-2.5 text-base" size="lg">
               {isFileSendingUI ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Send className="mr-2 h-5 w-5" />}
-              Send File
+              Send File Request
             </Button>
           </div>
           {selectedFile && (
@@ -129,8 +130,8 @@ export function FileTransfer({ onSendFile, fileActivities, onFileAction }: FileT
                         {getStatusIcon(file.status, file.type)}
                     </div>
                   </div>
-                  
-                  {(file.status === 'transferring' || (file.status === 'transferred' && file.progress === 100) ) && file.progress !== undefined && (
+
+                  {(file.status === 'transferring' || (file.status === 'transferred' && file.progress !== undefined && file.progress < 100) ) && file.progress !== undefined && (
                     <div className="mt-3">
                       <Progress value={file.progress} className="w-full h-2.5" />
                       <p className="text-xs text-right text-muted-foreground mt-1">{file.progress}%</p>
@@ -147,9 +148,13 @@ export function FileTransfer({ onSendFile, fileActivities, onFileAction }: FileT
                       </Button>
                     </div>
                   )}
-                  {file.status === 'transferred' && file.type === 'incoming' && (
-                    <div className="mt-2 text-xs text-green-600 dark:text-green-500 flex items-center">
-                      <Download className="mr-1.5 h-4 w-4" /> File automatically downloaded.
+                  {file.status === 'transferred' && file.type === 'incoming' && file.blob && (
+                    <div className="flex items-center space-x-2 mt-2 text-xs text-green-600 dark:text-green-500">
+                      <Download className="mr-1.5 h-4 w-4" />
+                      <span>File downloaded.</span>
+                      <Button variant="outline" size="sm" onClick={() => onRedownloadReceivedFile(file.id)} className="text-xs py-1 px-2 h-auto">
+                        <RefreshCw className="mr-1 h-3 w-3" /> Download Again
+                      </Button>
                     </div>
                   )}
                    {file.status === 'transferred' && file.type === 'outgoing' && (
@@ -172,6 +177,13 @@ export function FileTransfer({ onSendFile, fileActivities, onFileAction }: FileT
             </div>
           </div>
         )}
+         {fileActivities.length === 0 && (
+           <div className="flex flex-col items-center justify-center text-center text-muted-foreground py-10 h-full">
+                <UploadCloud className="w-12 h-12 sm:w-16 sm:w-16 mb-3 sm:mb-4 text-muted-foreground/60" />
+                <p className="text-base sm:text-lg font-medium">No file transfers yet.</p>
+                <p className="text-xs sm:text-sm">Send or receive files to see activity here.</p>
+            </div>
+        )}
       </CardContent>
       <CardFooter className="border-t border-border/50 pt-4">
         <p className="text-xs text-muted-foreground text-center w-full">Files are end-to-end encrypted via WebRTC. Max file size: {FILE_SIZE_LIMIT_MB_GB}.</p>
@@ -179,4 +191,3 @@ export function FileTransfer({ onSendFile, fileActivities, onFileAction }: FileT
     </Card>
   );
 }
-

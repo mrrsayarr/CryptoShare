@@ -1,5 +1,5 @@
 
-export type PeerConnectionState = 
+export type PeerConnectionState =
   | 'disconnected'       // Initial state, no connection or connection closed/failed and reset.
   | 'creating_session'   // Initiator: Generating session key and offer.
   | 'waiting_for_peer'   // Initiator: Offer sent (e.g., to Supabase), session key displayed, waiting for guest.
@@ -13,14 +13,14 @@ export interface FileMetadata {
   name: string;
   size: number;
   type?: string; // MIME type
-  fromPeer: boolean; 
+  fromPeer: boolean;
 }
 
 export interface FileChunk {
   fileId: string;
   chunkNumber: number;
   totalChunks: number;
-  data: string | ArrayBuffer; 
+  data: string | ArrayBuffer; // data is base64 encoded string when sent over data channel
   isLast: boolean;
 }
 
@@ -50,11 +50,13 @@ export interface TransferActivityFile {
   status: 'pending_approval' | 'transferring' | 'transferred' | 'rejected' | 'error' | 'pending_send' | 'waiting_approval';
   progress?: number;
   type: 'incoming' | 'outgoing';
-  file?: File; 
-  fromPeer?: boolean; 
-  chunks?: ArrayBuffer[]; 
-  receivedChunks?: number; 
-  totalChunks?: number; 
+  file?: File; // For outgoing files before sending
+  fromPeer?: boolean; // Should ideally be part of 'type' or redundant
+  blob?: Blob; // For incoming files after assembly, to allow re-download
+  // Obsolete fields, kept for reference to previous structure if needed:
+  // chunks?: ArrayBuffer[];
+  // receivedChunks?: number;
+  // totalChunks?: number;
 }
 
 // Supabase specific types
@@ -62,7 +64,7 @@ export interface WebRTCSession {
   id: string; // Session Key
   offer_sdp?: RTCSessionDescriptionInit;
   answer_sdp?: RTCSessionDescriptionInit;
-  // ICE candidates will be exchanged via Realtime broadcast, not stored directly in this table for simplicity
+  status?: string;
   created_at?: string;
   updated_at?: string;
 }
