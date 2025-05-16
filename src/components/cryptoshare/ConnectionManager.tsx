@@ -11,9 +11,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { PeerConnectionState } from '@/types/cryptoshare';
 
+const MAX_JOIN_ATTEMPTS = 5;
+const JOIN_LOCKOUT_DURATION = 30 * 1000; // 30 seconds
+
 interface ConnectionManagerProps {
   currentConnectionState: PeerConnectionState;
   sessionKey: string | null;
+  errorDetails: string | null; // New prop for error details
   onCreateSession: () => void;
   onJoinSession: (sessionKey: string) => void;
   onDisconnect: () => void;
@@ -22,6 +26,7 @@ interface ConnectionManagerProps {
 export function ConnectionManager({
   currentConnectionState,
   sessionKey,
+  errorDetails,
   onCreateSession,
   onJoinSession,
   onDisconnect,
@@ -29,14 +34,45 @@ export function ConnectionManager({
   const [inputSessionKey, setInputSessionKey] = useState('');
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
+  const [joinAttempts, setJoinAttempts] = useState(0);
+  const [joinDisabledUntil, setJoinDisabledUntil] = useState<number | null>(null);
 
   useEffect(() => {
     console.log("ConnectionManager: currentConnectionState prop changed to", currentConnectionState);
     if (currentConnectionState === 'disconnected' || currentConnectionState === 'failed') {
       console.log("ConnectionManager: Resetting inputs due to disconnect/fail.");
       setInputSessionKey(''); 
+      // If the failure was after a join attempt, handle lockout
+      if (currentConnectionState === 'failed' && inputSessionKey) { // Check if inputSessionKey was set (meaning it was a join attempt)
+        const newAttempts = joinAttempts + 1;
+        setJoinAttempts(newAttempts);
+        if (newAttempts >= MAX_JOIN_ATTEMPTS) {
+          const lockoutEnds = Date.now() + JOIN_LOCKOUT_DURATION;
+          setJoinDisabledUntil(lockoutEnds);
+          toast({
+            title: "Too Many Failed Attempts",
+            description: `Session joining disabled for ${JOIN_LOCKOUT_DURATION / 1000} seconds.`,
+            variant: "destructive",
+          });
+        }
+      }
+    } else if (currentConnectionState === 'connected') {
+      setJoinAttempts(0); // Reset attempts on successful connection
+      setJoinDisabledUntil(null);
     }
-  }, [currentConnectionState]);
+  }, [currentConnectionState, toast, inputSessionKey]); // Added inputSessionKey to know if failure was from join
+
+   useEffect(() => {
+    let timer: NodeJS.Timeout | undefined;
+    if (joinDisabledUntil && joinDisabledUntil > Date.now()) {
+      timer = setTimeout(() => {
+        setJoinDisabledUntil(null);
+        setJoinAttempts(0); // Reset attempts after lockout
+      }, joinDisabledUntil - Date.now());
+    }
+    return () => clearTimeout(timer);
+  }, [joinDisabledUntil]);
+
 
   const handleCopyKey = () => {
     if (sessionKey) {
@@ -51,6 +87,10 @@ export function ConnectionManager({
   };
 
   const handleJoinClick = () => {
+    if (joinDisabledUntil && joinDisabledUntil > Date.now()) {
+      toast({ title: "Joining Disabled", description: `Please wait ${Math.ceil((joinDisabledUntil - Date.now())/1000)} more seconds.`, variant: "destructive" });
+      return;
+    }
     if (!inputSessionKey.trim()) {
       toast({ title: "Error", description: "Please enter a Session Key.", variant: "destructive" });
       return;
@@ -59,12 +99,13 @@ export function ConnectionManager({
   };
   
   const isLoading = ['creating_session', 'joining_session', 'connecting'].includes(currentConnectionState);
-  // const isSessionActive = currentConnectionState === 'waiting_for_peer' || currentConnectionState === 'connected';
+  const isJoiningDisabledByLockout = joinDisabledUntil !== null && joinDisabledUntil > Date.now();
+
 
   const renderInitialActions = () => (
     <div className="space-y-6 text-center">
       <Alert variant="default" className="text-left bg-card border-border shadow-sm">
-        <Info className="h-5 w-5 text-primary" />
+        <Info className="mr-3 h-5 w-5 shrink-0 text-primary" />
         <AlertTitle className="font-semibold">How to Connect</AlertTitle>
         <AlertDescription className="text-sm">
           One user starts a new session to get a Session Key. Share this key with the other user.
@@ -72,7 +113,7 @@ export function ConnectionManager({
         </AlertDescription>
       </Alert>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Button onClick={onCreateSession} className="w-full py-3 text-base" disabled={isLoading}>
+        <Button onClick={() => { setJoinAttempts(0); setJoinDisabledUntil(null); onCreateSession(); }} className="w-full py-3 text-base" disabled={isLoading}>
           {currentConnectionState === 'creating_session' ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Zap className="mr-2 h-5 w-5" />}
           Create New Session
         </Button>
@@ -83,13 +124,18 @@ export function ConnectionManager({
                 placeholder="Enter Session Key"
                 value={inputSessionKey}
                 onChange={(e) => setInputSessionKey(e.target.value)}
-                disabled={isLoading}
+                disabled={isLoading || isJoiningDisabledByLockout}
                 className="h-11 text-base"
             />
-            <Button onClick={handleJoinClick} variant="outline" className="w-full py-3 text-base" disabled={isLoading || !inputSessionKey.trim()}>
+            <Button onClick={handleJoinClick} variant="outline" className="w-full py-3 text-base" disabled={isLoading || !inputSessionKey.trim() || isJoiningDisabledByLockout}>
                 {currentConnectionState === 'joining_session' && isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <UserPlus className="mr-2 h-5 w-5" />}
                 Join Session
             </Button>
+            {isJoiningDisabledByLockout && (
+              <p className="text-xs text-destructive text-center">
+                Joining temporarily disabled. Please wait {Math.ceil((joinDisabledUntil! - Date.now())/1000)}s.
+              </p>
+            )}
         </Card>
       </div>
     </div>
@@ -135,8 +181,10 @@ export function ConnectionManager({
      <div className="space-y-6 text-center p-4 bg-red-500/10 border border-red-500/30 rounded-lg shadow-md">
         <WifiOff className="h-16 w-16 text-red-600 mx-auto"/>
         <p className="text-2xl font-bold text-red-700 dark:text-red-500">Connection Failed</p>
-        <p className="text-muted-foreground">Something went wrong. Please ensure the Session Key is correct and try again. If issues persist, check network or firewall settings.</p>
-        <Button onClick={onDisconnect} variant="outline" className="w-full py-3 text-base">
+        <p className="text-muted-foreground">
+          {errorDetails || "Something went wrong. Please ensure the Session Key is correct and try again. If issues persist, check network or firewall settings."}
+        </p>
+        <Button onClick={() => { setJoinAttempts(0); setJoinDisabledUntil(null); onDisconnect(); }} variant="outline" className="w-full py-3 text-base">
            <RotateCcw className="mr-2 h-5 w-5" /> Reset and Try Again
         </Button>
     </div>
@@ -160,6 +208,9 @@ export function ConnectionManager({
       
        <div className="text-center text-sm pt-2 text-muted-foreground">
         Status: <span className={`font-semibold ${statusColor}`}>{statusText}</span>
+        {isLoading && currentConnectionState === 'joining_session' && sessionKey && (
+          <span className="block text-xs">(Attempting to join: {sessionKey})</span>
+        )}
       </div>
     </div>
   );
