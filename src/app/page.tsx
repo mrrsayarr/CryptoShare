@@ -162,7 +162,7 @@ export default function CryptosharePage() {
   useEffect(() => {
     setMounted(true);
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session'].includes(appWebRTCStateRef.current)) {
+      if (['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session', 'offer_generated', 'answer_generated'].includes(appWebRTCStateRef.current)) {
         event.preventDefault();
         event.returnValue = 'A P2P session is active. Are you sure you want to leave?';
       }
@@ -171,7 +171,7 @@ export default function CryptosharePage() {
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      if (['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session'].includes(appWebRTCStateRef.current)) {
+      if (['connected', 'connecting', 'waiting_for_peer', 'creating_session', 'joining_session', 'offer_generated', 'answer_generated'].includes(appWebRTCStateRef.current)) {
         console.log(`CryptosharePage: Cleanup on unmount/navigation. Current state: ${appWebRTCStateRef.current}. Disconnecting WebRTC.`);
         stableDisconnectRef.current(); 
       }
@@ -334,15 +334,15 @@ export default function CryptosharePage() {
 
       {appWebRTCState === 'connected' && (
         <Tabs defaultValue="file-transfer" className="w-full max-w-2xl">
-          <TabsList className="grid w-full grid-cols-3 bg-card border border-border shadow-md rounded-lg">
-            <TabsTrigger value="file-transfer" className="py-2.5 text-sm sm:text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md rounded-md">
-              <FileUp className="mr-1.5 h-5 w-5" /> File Transfer
+          <TabsList className="flex w-full bg-card border border-border shadow-md rounded-lg p-1">
+            <TabsTrigger value="file-transfer" className="flex-1 py-2 px-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md rounded-md">
+              <FileUp className="mr-1.5 h-4 w-4 sm:h-5 sm:w-5" /> File Transfer
             </TabsTrigger>
-            <TabsTrigger value="data-transfer" className="py-2.5 text-sm sm:text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md rounded-md">
-              <Send className="mr-1.5 h-5 w-5" /> Data Transfer
+            <TabsTrigger value="data-transfer" className="flex-1 py-2 px-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md rounded-md">
+              <Send className="mr-1.5 h-4 w-4 sm:h-5 sm:w-5" /> Data Transfer
             </TabsTrigger>
-            <TabsTrigger value="messaging" className="py-2.5 text-sm sm:text-base data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md rounded-md">
-              <MessageCircle className="mr-1.5 h-5 w-5" /> Messaging
+            <TabsTrigger value="messaging" className="flex-1 py-2 px-2 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md rounded-md">
+              <MessageCircle className="mr-1.5 h-4 w-4 sm:h-5 sm:w-5" /> Messaging
             </TabsTrigger>
           </TabsList>
           <TabsContent value="file-transfer" className="mt-4">

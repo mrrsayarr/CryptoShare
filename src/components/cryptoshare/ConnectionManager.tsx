@@ -34,7 +34,7 @@ export function ConnectionManager({
     console.log("ConnectionManager: currentConnectionState prop changed to", currentConnectionState);
     if (currentConnectionState === 'disconnected' || currentConnectionState === 'failed') {
       console.log("ConnectionManager: Resetting inputs due to disconnect/fail.");
-      setInputSessionKey(''); // Reset input field on disconnect or failure
+      setInputSessionKey(''); 
     }
   }, [currentConnectionState]);
 
@@ -59,7 +59,7 @@ export function ConnectionManager({
   };
   
   const isLoading = ['creating_session', 'joining_session', 'connecting'].includes(currentConnectionState);
-  const isSessionActive = currentConnectionState === 'waiting_for_peer' || currentConnectionState === 'connected';
+  // const isSessionActive = currentConnectionState === 'waiting_for_peer' || currentConnectionState === 'connected';
 
   const renderInitialActions = () => (
     <div className="space-y-6 text-center">
@@ -87,7 +87,7 @@ export function ConnectionManager({
                 className="h-11 text-base"
             />
             <Button onClick={handleJoinClick} variant="outline" className="w-full py-3 text-base" disabled={isLoading || !inputSessionKey.trim()}>
-                {currentConnectionState === 'joining_session' && !isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <UserPlus className="mr-2 h-5 w-5" />}
+                {currentConnectionState === 'joining_session' && isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <UserPlus className="mr-2 h-5 w-5" />}
                 Join Session
             </Button>
         </Card>

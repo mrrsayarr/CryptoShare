@@ -48,7 +48,7 @@ export function Navbar() {
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Link href="/about" passHref>
+                   <Link href="/about" passHref>
                     <Button variant="ghost" size="icon" className="text-foreground hover:bg-primary/10 hover:text-primary">
                       <Info className="h-5 w-5" />
                       <span className="sr-only">About</span>

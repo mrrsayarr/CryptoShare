@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
-import { MessageSquare, Send, User, Smile } from 'lucide-react'; // Replaced Bot with Smile for a friendlier peer icon
+import { MessageSquare, Send, User, Smile } from 'lucide-react';
 import type { ChatMessage } from '@/types/cryptoshare';
 
 interface MessagingProps {

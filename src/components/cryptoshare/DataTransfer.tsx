@@ -29,8 +29,6 @@ export function DataTransfer({ onSendData, dataSnippets }: DataTransferProps) {
     onSendData(dataToSend);
     setDataToSend(''); 
     
-    // Simulate network delay for UI feedback and then toast
-    // Actual success/failure will be managed by the WebRTC hook's events
     setTimeout(() => { 
         setIsSending(false);
         toast({ title: 'Data Sent', description: 'Your data has been sent to the peer.' });
