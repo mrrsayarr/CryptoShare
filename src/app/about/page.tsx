@@ -58,8 +58,8 @@ export default function AboutPage() {
             <p>
               Once connected, you'll see the status change to &quot;Connected&quot; and tabs for File Transfer, Data Transfer, and Messaging will become available. The connection is directly between your and your peer&apos;s browser.
             </p>
-            <p className="mt-2 text-sm text-muted-foreground">
-                <strong>Note on Key Strength Tool:</strong> The "Check Key Strength / Get Suggestions" button on the connection card is for a separate "Password Tool" (accessible via navbar) and is not directly part of this manual WebRTC connection process. The "Generate Secure Key" button is also a remnant of a previous connection method and is not used in the current manual flow.
+             <p className="mt-2 text-sm text-muted-foreground">
+                <strong>Note on Connection Method:</strong> The application uses a manual WebRTC connection process where Offer/Answer SDPs and ICE candidates are copied and pasted between users. The "Generate Secure Key" button on the connection card is a remnant of a previous connection method and is not used in the current manual flow.
             </p>
 
             <h3 className="text-xl font-semibold mt-4 mb-2">2. Using the Features</h3>
@@ -89,18 +89,8 @@ export default function AboutPage() {
                 </ul>
               </li>
             </ul>
-
-            <h3 className="text-xl font-semibold mt-4 mb-2">3. Password Strength Analyzer</h3>
-            <p className="mb-1">
-              Navigate to the &quot;Password Tool&quot; page using the link in the navbar. This tool is independent of the P2P connection.
-            </p>
-            <ul className="list-disc pl-6 space-y-1 mb-2">
-              <li>Enter any password you&apos;d like to analyze into the input field.</li>
-              <li>Click &quot;Get Suggestions&quot;.</li>
-              <li>The AI will provide suggestions for stronger alternatives and explain why they are more secure.</li>
-            </ul>
-
-            <h3 className="text-xl font-semibold mt-4 mb-2">4. Security & Connectivity</h3>
+            
+            <h3 className="text-xl font-semibold mt-4 mb-2">3. Security & Connectivity</h3>
             <p>
               All data transfers (files, data snippets, messages) within Cryptoshare are end-to-end encrypted using the inherent security of WebRTC (DTLS). The manual exchange of SDP and ICE candidates is for connection setup; the actual data does not pass through any central server. The security of the initial SDP/ICE exchange depends on how users share this information.
             </p>
@@ -120,7 +110,7 @@ export default function AboutPage() {
                 </div>
             </div>
             
-            <h3 className="text-xl font-semibold mt-4 mb-2">5. Disconnecting</h3>
+            <h3 className="text-xl font-semibold mt-4 mb-2">4. Disconnecting</h3>
             <p>
               To end the session, either user can click the &quot;Disconnect&quot; or "Reset Connection Process" button. This will close the P2P connection. Refreshing the page or closing the browser tab will also terminate the connection.
             </p>
@@ -174,7 +164,7 @@ export default function AboutPage() {
              Bağlantı kurulduğunda, durumun &quot;Bağlandı&quot; olarak değiştiğini göreceksiniz ve Dosya Aktarımı, Veri Aktarımı ve Mesajlaşma sekmeleri kullanılabilir hale gelecektir. Bağlantı doğrudan sizin ve eşinizin tarayıcısı arasındadır.
             </p>
              <p className="mt-2 text-sm text-muted-foreground">
-                <strong>Not:</strong> Bağlantı kartındaki "Anahtar Gücünü Kontrol Et / Öneri Al" düğmesi, gezinme çubuğundan erişilebilen ayrı bir "Şifre Aracı" içindir ve bu manuel WebRTC bağlantı sürecinin doğrudan bir parçası değildir. "Güvenli Anahtar Oluştur" düğmesi de önceki bir bağlantı yönteminden kalmadır ve mevcut manuel akışta kullanılmaz.
+                <strong>Bağlantı Yöntemi Notu:</strong> Uygulama, Teklif/Yanıt SDP'lerinin ve ICE adaylarının kullanıcılar arasında kopyalanıp yapıştırıldığı manuel bir WebRTC bağlantı süreci kullanır. Bağlantı kartındaki "Güvenli Anahtar Oluştur" düğmesi önceki bir bağlantı yönteminden kalmadır ve mevcut manuel akışta kullanılmaz.
             </p>
 
             <h3 className="text-xl font-semibold mt-4 mb-2">2. Özellikleri Kullanma</h3>
@@ -205,17 +195,7 @@ export default function AboutPage() {
               </li>
             </ul>
             
-            <h3 className="text-xl font-semibold mt-4 mb-2">3. Şifre Gücü Analizcisi</h3>
-            <p className="mb-1">
-              Gezinme çubuğundaki bağlantıyı kullanarak &quot;Şifre Aracı&quot; sayfasına gidin. Bu araç P2P bağlantısından bağımsızdır.
-            </p>
-            <ul className="list-disc pl-6 space-y-1 mb-2">
-              <li>Analiz etmek istediğiniz herhangi bir şifreyi giriş alanına girin.</li>
-              <li>&quot;Öneri Al&quot;a tıklayın.</li>
-              <li>Yapay zeka, daha güçlü alternatifler için öneriler sunacak ve neden daha güvenli olduklarını açıklayacaktır.</li>
-            </ul>
-
-            <h3 className="text-xl font-semibold mt-4 mb-2">4. Güvenlik ve Bağlanabilirlik</h3>
+            <h3 className="text-xl font-semibold mt-4 mb-2">3. Güvenlik ve Bağlanabilirlik</h3>
             <p>
              Cryptoshare içindeki tüm veri aktarımları (dosyalar, veri parçacıkları, mesajlar) WebRTC'nin doğal güvenliği (DTLS) kullanılarak uçtan uca şifrelenir. SDP ve ICE adaylarının manuel olarak değiş tokuşu bağlantı kurulumu içindir; gerçek veriler herhangi bir merkezi sunucudan geçmez. İlk SDP/ICE değişiminin güvenliği, kullanıcıların bu bilgiyi nasıl paylaştığına bağlıdır.
             </p>
@@ -235,7 +215,7 @@ export default function AboutPage() {
                 </div>
             </div>
             
-            <h3 className="text-xl font-semibold mt-4 mb-2">5. Bağlantıyı Kesme</h3>
+            <h3 className="text-xl font-semibold mt-4 mb-2">4. Bağlantıyı Kesme</h3>
             <p>
               Oturumu sonlandırmak için, her iki kullanıcı da &quot;Bağlantıyı Kes&quot; veya "Bağlantı Sürecini Sıfırla" düğmesine tıklayabilir. Bu, P2P bağlantısını kapatacaktır. Sayfayı yenilemek veya tarayıcı sekmesini kapatmak da bağlantıyı sonlandıracaktır.
             </p>
@@ -245,5 +225,3 @@ export default function AboutPage() {
     </div>
   );
 }
-
-    

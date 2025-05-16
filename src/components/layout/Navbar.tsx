@@ -1,7 +1,7 @@
 
 "use client";
 import Link from 'next/link';
-import { LockKeyhole, MessageSquareText, Moon, Sun, Info, ShieldQuestion } from 'lucide-react';
+import { LockKeyhole, MessageSquareText, Moon, Sun, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTheme } from "next-themes";
 import {
@@ -33,7 +33,7 @@ export function Navbar() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link href="/" passHref>
-                    <Button variant="ghost" size="icon" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground">
+                    <Button variant="ghost" size="icon" className="text-foreground hover:bg-primary/10 hover:text-primary">
                       <MessageSquareText className="h-5 w-5" />
                       <span className="sr-only">Share</span>
                     </Button>
@@ -45,27 +45,11 @@ export function Navbar() {
               </Tooltip>
             </TooltipProvider>
 
-            {/* <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link href="/password-strength" passHref>
-                    <Button variant="ghost" size="icon" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground">
-                      <ShieldQuestion className="h-5 w-5" />
-                      <span className="sr-only">Password Tool</span>
-                    </Button>
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Password Tool</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider> */}
-
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link href="/about" passHref>
-                    <Button variant="ghost" size="icon" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground">
+                    <Button variant="ghost" size="icon" className="text-foreground hover:bg-primary/10 hover:text-primary">
                       <Info className="h-5 w-5" />
                       <span className="sr-only">About</span>
                     </Button>
@@ -79,7 +63,7 @@ export function Navbar() {
             
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="text-foreground hover:bg-accent/10 hover:text-accent-foreground">
+                <Button variant="ghost" size="icon" className="text-foreground hover:bg-primary/10 hover:text-primary">
                   <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
                   <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
                   <span className="sr-only">Toggle theme</span>
