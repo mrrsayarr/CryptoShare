@@ -39,7 +39,7 @@ export function Messaging({ onSendMessage, messages }: MessagingProps) {
     <Card className="shadow-xl flex flex-col h-[600px] bg-card">
       <CardHeader className="border-b border-border">
         <CardTitle className="flex items-center text-xl font-semibold"><MessageSquare className="mr-2 h-6 w-6 text-primary" /> Secure Messaging</CardTitle>
-        <CardDescription className="text-sm">Chat securely with your connected peer.</CardDescription>
+        <CardDescription className="text-sm text-muted-foreground">Chat securely with your connected peer.</CardDescription>
       </CardHeader>
       <CardContent className="flex-grow overflow-hidden flex flex-col p-4 md:p-6">
         <ScrollArea className="flex-grow pr-2" viewportRef={scrollAreaViewportRef}>
@@ -47,21 +47,21 @@ export function Messaging({ onSendMessage, messages }: MessagingProps) {
             {messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`flex items-start space-x-2 group ${
+                className={`flex items-end space-x-2 group ${ // Changed items-start to items-end
                   msg.sender === 'user' ? 'justify-end flex-row-reverse space-x-reverse' : 'justify-start'
                 }`}
               >
-                {msg.sender === 'peer' && <Smile className="h-6 w-6 text-muted-foreground flex-shrink-0 mt-1" />}
-                {msg.sender === 'user' && <User className="h-6 w-6 text-muted-foreground flex-shrink-0 mt-1" />}
+                {msg.sender === 'peer' && <Smile className="h-6 w-6 text-muted-foreground flex-shrink-0 mb-1" />} {/* Removed mt-1, added mb-1 for slight lift */}
+                {msg.sender === 'user' && <User className="h-6 w-6 text-muted-foreground flex-shrink-0 mb-1" />} {/* Removed mt-1, added mb-1 for slight lift */}
                 <div
                   className={`max-w-[75%] md:max-w-[70%] p-3 rounded-xl shadow-md break-words text-sm ${
                     msg.sender === 'user'
-                      ? 'bg-primary text-primary-foreground rounded-br-sm'
-                      : 'bg-muted text-muted-foreground rounded-bl-sm' 
+                      ? 'bg-primary text-primary-foreground rounded-br-none' // Changed to rounded-br-none for a common chat bubble style
+                      : 'bg-secondary text-secondary-foreground rounded-bl-none' // Changed bg, text colors and rounded-bl-none
                   }`}
                 >
                   <p>{msg.text}</p>
-                  <p className={`text-xs mt-1.5 ${msg.sender === 'user' ? 'text-primary-foreground/80' : 'text-muted-foreground/80'} text-right`}>
+                  <p className={`text-xs mt-1.5 ${msg.sender === 'user' ? 'text-primary-foreground/80' : 'text-secondary-foreground/80'} text-right`}>
                     {formatTimestamp(new Date(msg.timestamp))}
                   </p>
                 </div>
@@ -69,7 +69,7 @@ export function Messaging({ onSendMessage, messages }: MessagingProps) {
             ))}
              {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-10">
-                <MessageSquare className="w-16 h-16 mb-4 text-border" />
+                <MessageSquare className="w-16 h-16 mb-4 text-muted-foreground/70" /> {/* Changed icon color */}
                 <p className="text-lg font-medium">No messages yet.</p>
                 <p className="text-sm">Start the conversation by typing a message below!</p>
               </div>
