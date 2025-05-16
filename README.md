@@ -28,7 +28,7 @@ Follow these steps to set up and run Cryptoshare locally:
 **1. Clone the Repository:**
 
 ```bash
-git clone <repository_url>
+git clone https://github.com/mrrsayarr/CryptoShare.git
 cd cryptoshare
 ```
 

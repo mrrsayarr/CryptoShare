@@ -28,7 +28,7 @@ Cryptoshare'i yerel olarak kurmak ve çalıştırmak için şu adımları izleyi
 **1. Depoyu Klonlayın:**
 
 ```bash
-git clone <depo_url'si>
+git clone https://github.com/mrrsayarr/CryptoShare.git
 cd cryptoshare
 ```
 
